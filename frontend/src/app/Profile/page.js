@@ -7,6 +7,7 @@ import { PopupMini, PopupMini2 } from "../../components/Popup/popup";
 
 export default function Profile() {
   const router = useRouter();
+  const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
   const [isEditing, setIsEditing] = useState(false);
   const [showDeletePopup, setShowDeletePopup] = useState(false);
@@ -40,9 +41,7 @@ export default function Profile() {
 
     const fetchProfile = async () => {
       try {
-        const response = await fetch(
-          `http://localhost:5000/profile/${user.user_id}`,
-        );
+        const response = await fetch(`${API_URL}/profile/${user.user_id}`);
 
         const data = await response.json();
 
@@ -89,12 +88,9 @@ export default function Profile() {
     const user = JSON.parse(storedUser);
 
     try {
-      const response = await fetch(
-        `http://localhost:5000/profile/${user.user_id}`,
-        {
-          method: "DELETE",
-        },
-      );
+      const response = await fetch(`${API_URL}/profile/${user.user_id}`, {
+        method: "DELETE",
+      });
 
       const data = await response.json();
 
@@ -186,20 +182,17 @@ export default function Profile() {
     }
 
     try {
-      const response = await fetch(
-        `http://localhost:5000/profile/${user.user_id}`,
-        {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            username: normalizedUsername,
-            email: normalizedEmail,
-            phoneNumber: normalizedTelp || null,
-          }),
+      const response = await fetch(`${API_URL}/profile/${user.user_id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
         },
-      );
+        body: JSON.stringify({
+          username: normalizedUsername,
+          email: normalizedEmail,
+          phoneNumber: normalizedTelp || null,
+        }),
+      });
 
       const data = await response.json();
 

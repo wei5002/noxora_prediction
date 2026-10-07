@@ -8,6 +8,7 @@ import { PopupMini } from "../../components/Popup/popup";
 
 export default function Register() {
   const router = useRouter();
+    const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
@@ -41,7 +42,7 @@ export default function Register() {
     }
 
     try {
-      const response = await fetch("http://localhost:5000/register", {
+      const response = await fetch(`${API_URL}/register`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

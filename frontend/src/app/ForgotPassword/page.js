@@ -7,6 +7,7 @@ import { PopupMini2 } from "../../components/Popup/popup";
 
 export default function ForgotPassword() {
   const router = useRouter();
+  const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
   const [email, setEmail] = useState("");
   const [showPopup, setShowPopup] = useState(false);
@@ -35,7 +36,7 @@ export default function ForgotPassword() {
     }
 
     try {
-      const response = await fetch("http://localhost:5000/forgot-password", {
+      const response = await fetch(`${API_URL}/forgot-password`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

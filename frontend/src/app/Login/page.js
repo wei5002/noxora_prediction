@@ -4,11 +4,12 @@ import { Button, Flex, Input, Text } from "@chakra-ui/react";
 import { PasswordInput } from "@/components/ui/password-input";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import {  PopupMini2 } from "../../components/Popup/popup";
+import { PopupMini2 } from "../../components/Popup/popup";
 // import { PopupMini } from "../components/Popup/popup";
 
 export default function Login() {
   const router = useRouter();
+  const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -21,7 +22,7 @@ export default function Login() {
     }
 
     try {
-      const response = await fetch("http://localhost:5000/login", {
+      const response = await fetch(`${API_URL}/login`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

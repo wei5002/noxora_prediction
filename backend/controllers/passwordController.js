@@ -131,7 +131,7 @@ export const forgotPassword = async (req, res) => {
     );
 
     // Link reset password
-    const resetLink = `http://localhost:3000/ChangePassword?token=${token}`;
+    const resetLink = `${process.env.FRONTEND_URL}/ChangePassword?token=${token}`;
 
     // Kirim email
     await sendResetPasswordEmail(user.email, resetLink);

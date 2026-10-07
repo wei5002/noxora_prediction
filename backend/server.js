@@ -436,10 +436,7 @@ app.use("/", passwordRoutes);
 
 // START SERVER
 app.listen(PORT, async () => {
-  // console.log("");
-  // console.log("========================================");
   console.log(`Backend berjalan di http://localhost:${PORT}`);
-  // console.log("========================================");
 
   const currentHour = getCurrentHourKey();
   const success = await runMLPipeline();

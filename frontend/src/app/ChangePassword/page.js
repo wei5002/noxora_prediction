@@ -8,6 +8,7 @@ import { PopupMini2 } from "../../components/Popup/popup";
 
 export default function ChangePassword() {
   const router = useRouter();
+  const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -56,7 +57,7 @@ export default function ChangePassword() {
 
       // RESET PASSWORD DARI EMAIL
       if (resetToken) {
-        response = await fetch("http://localhost:5000/reset-password", {
+        response = await fetch(`${API_URL}/reset-password`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -87,19 +88,16 @@ export default function ChangePassword() {
 
         const user = JSON.parse(storedUser);
 
-        response = await fetch(
-          `http://localhost:5000/change-password/${user.user_id}`,
-          {
-            method: "PUT",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              newPassword,
-              confirmPassword,
-            }),
+        response = await fetch(`${API_URL}/change-password/${user.user_id}`, {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
           },
-        );
+          body: JSON.stringify({
+            newPassword,
+            confirmPassword,
+          }),
+        });
       }
 
       const data = await response.json();
