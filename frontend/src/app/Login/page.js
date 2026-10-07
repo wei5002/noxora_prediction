@@ -5,11 +5,12 @@ import { PasswordInput } from "@/components/ui/password-input";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { PopupMini2 } from "../../components/Popup/popup";
-// import { PopupMini } from "../components/Popup/popup";
 
 export default function Login() {
   const router = useRouter();
-  const API_URL = process.env.NEXT_PUBLIC_API_URL;
+
+  const API_URL =
+    process.env.NEXT_PUBLIC_API_URL || "https://noxora-backend.vercel.app";
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -40,7 +41,6 @@ export default function Login() {
         return;
       }
 
-      // Simpan data user yang berhasil login
       localStorage.setItem("user", JSON.stringify(data.user));
       localStorage.setItem("isLoggedIn", "true");
 
@@ -66,7 +66,6 @@ export default function Login() {
         borderRadius={"2vh"}
         justify={"center"}
       >
-        {/* Header */}
         <Flex
           w={"100%"}
           justify={"center"}
@@ -78,7 +77,6 @@ export default function Login() {
           </Text>
         </Flex>
 
-        {/* Email */}
         <Flex
           direction={{ base: "column", sm: "row" }}
           align={"center"}
@@ -98,7 +96,6 @@ export default function Login() {
           />
         </Flex>
 
-        {/* Password */}
         <Flex
           direction={{ base: "column", sm: "row" }}
           align="center"
@@ -118,7 +115,6 @@ export default function Login() {
           />
         </Flex>
 
-        {/* Forgot Password */}
         <Flex w="100%" justify="flex-end" mt="-1vh">
           <Text
             fontSize="xs"
@@ -133,14 +129,12 @@ export default function Login() {
           </Text>
         </Flex>
 
-        {/* Login Button */}
         <Flex
           w={"100%"}
           justify={"center"}
           align={"center"}
           direction={"column"}
           gap={"1vh"}
-          // mt={"1vh"}
         >
           <Button
             w={"30vh"}
