@@ -10,7 +10,7 @@ from fastapi import FastAPI, HTTPException
 app = FastAPI()
 
 ML_DIR = Path(__file__).resolve().parent
-MODEL_PATH = ML_DIR / "models" / "svr" / "svr_no2_meteorologi_80_20.joblib"
+MODEL_PATH = ML_DIR / "models" / "svr" / "svr_lag123_no2_meteorologi_80_20.joblib"
 TIMEZONE = "Asia/Jakarta"
 
 AIR_QUALITY_URL = "https://air-quality-api.open-meteo.com/v1/air-quality"

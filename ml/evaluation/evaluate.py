@@ -1,5 +1,6 @@
-import pandas as pd
+import re
 import numpy as np
+import pandas as pd
 
 from pathlib import Path
 from sklearn.metrics import (
@@ -9,29 +10,89 @@ from sklearn.metrics import (
 )
 
 # PATH
-
 BASE_DIR = Path(__file__).resolve().parents[1]
+
 PREDICTION_DIR = (
     BASE_DIR / "results" / "predictions"
 )
+
 EVALUATION_DIR = (
     BASE_DIR / "results" / "evaluation"
 )
+
 EVALUATION_DIR.mkdir(
     parents=True,
     exist_ok=True,
 )
 
-# KOLOM YANG DIBUTUHKAN
+# KONFIGURASI EKSPERIMEN
+ALGORITHMS = [
+    "XGBoost",
+    "SVR",
+]
+
+LAG_CONFIGURATIONS = [
+    "lag1",
+    "lag12",
+    "lag123",
+]
+
+DATASETS = [
+    "no2",
+    "no2_meteorologi",
+]
+
+SPLITS = [
+    "70_30",
+    "80_20",
+]
+
 REQUIRED_COLUMNS = [
     "actual",
     "predicted",
-    "algorithm",
-    "dataset",
-    "split",
 ]
 
-# LOAD HASIL PREDIKSI
+# POLA NAMA FILE PREDIKSI
+FILENAME_PATTERN = re.compile(
+    r"^(xgboost|svr)_"
+    r"(?:(lag1|lag12|lag123)_)?"
+    r"(no2_meteorologi|no2)_"
+    r"(70_30|80_20)_predictions\.csv$",
+    re.IGNORECASE,
+)
+
+# MEMBACA INFORMASI SKENARIO DARI NAMA FILE
+def parse_prediction_filename(file_path):
+
+    match = FILENAME_PATTERN.match(
+        file_path.name
+    )
+
+    if not match:
+        return None
+
+    algorithm, lag, dataset, split = (
+        match.groups()
+    )
+
+    if lag is None:
+        lag = "lag123"
+
+    algorithm = (
+        "XGBoost"
+        if algorithm.lower() == "xgboost"
+        else "SVR"
+    )
+
+    return {
+        "algorithm": algorithm,
+        "lag_configuration": lag.lower(),
+        "dataset": dataset.lower(),
+        "split": split,
+        "prediction_file": file_path.name,
+    }
+
+# MEMUAT HASIL PREDIKSI
 def load_predictions():
 
     if not PREDICTION_DIR.exists():
@@ -39,14 +100,11 @@ def load_predictions():
             f"Folder prediksi tidak ditemukan: "
             f"{PREDICTION_DIR}"
         )
-    # Membaca file prediksi eksperimen.
-    # File realtime tidak digunakan untuk evaluasi eksperimen.
+
     prediction_files = sorted(
-        file_path
-        for file_path in PREDICTION_DIR.glob(
+        PREDICTION_DIR.glob(
             "*_predictions.csv"
         )
-        if file_path.name != "svr_realtime_predictions.csv"
     )
 
     if not prediction_files:
@@ -55,24 +113,86 @@ def load_predictions():
             "Jalankan training terlebih dahulu."
         )
 
-    dataframes = []
+    scenario_files = {}
+    ignored_files = []
 
     for file_path in prediction_files:
-        df = pd.read_csv(file_path)
-        # Periksa kolom yang dibutuhkan
+
+        metadata = parse_prediction_filename(
+            file_path
+        )
+
+        if metadata is None:
+            ignored_files.append(
+                file_path.name
+            )
+            continue
+
+        scenario_key = (
+            metadata["algorithm"],
+            metadata["lag_configuration"],
+            metadata["dataset"],
+            metadata["split"],
+        )
+
+        is_legacy_file = (
+            re.match(
+                r"^(xgboost|svr)_"
+                r"(no2_meteorologi|no2)_"
+                r"(70_30|80_20)_predictions\.csv$",
+                file_path.name,
+                re.IGNORECASE,
+            )
+            is not None
+        )
+
+        if scenario_key not in scenario_files:
+
+            scenario_files[scenario_key] = (
+                file_path,
+                metadata,
+                is_legacy_file,
+            )
+
+        elif (
+            scenario_files[scenario_key][2]
+            and not is_legacy_file
+        ):
+
+            scenario_files[scenario_key] = (
+                file_path,
+                metadata,
+                is_legacy_file,
+            )
+
+    dataframes = []
+    invalid_files = []
+
+    for (
+        file_path,
+        metadata,
+        _,
+    ) in scenario_files.values():
+
+        df = pd.read_csv(
+            file_path
+        )
+
         missing_columns = [
-            col
-            for col in REQUIRED_COLUMNS
-            if col not in df.columns
+            column
+            for column in REQUIRED_COLUMNS
+            if column not in df.columns
         ]
 
         if missing_columns:
-            raise ValueError(
-                f"Kolom tidak ditemukan pada "
-                f"{file_path.name}: {missing_columns}"
+            invalid_files.append(
+                f"{file_path.name}: "
+                f"kolom tidak ditemukan "
+                f"{missing_columns}"
             )
+            continue
 
-        # Pastikan nilai aktual dan prediksi numerik
+        # Memastikan nilai aktual dan prediksi numerik.
         df["actual"] = pd.to_numeric(
             df["actual"],
             errors="coerce",
@@ -83,7 +203,7 @@ def load_predictions():
             errors="coerce",
         )
 
-        # Hapus nilai kosong dan tak hingga
+        # Menghapus nilai kosong dan tak hingga.
         df = df.replace(
             [np.inf, -np.inf],
             np.nan,
@@ -93,12 +213,45 @@ def load_predictions():
             subset=REQUIRED_COLUMNS
         )
 
-        if not df.empty:
-            dataframes.append(df)
+        if df.empty:
+            invalid_files.append(
+                f"{file_path.name}: "
+                "tidak ada data prediksi valid"
+            )
+            continue
+
+        # Menambahkan metadata skenario.
+        for column, value in metadata.items():
+            df[column] = value
+
+        dataframes.append(
+            df
+        )
+
+    if ignored_files:
+        print(
+            "\nFILE YANG DILEWATI:"
+        )
+
+        for filename in ignored_files:
+            print(
+                f"- {filename}"
+            )
+
+    if invalid_files:
+        print(
+            "\nFILE YANG TIDAK DAPAT DIEVALUASI:"
+        )
+
+        for message in invalid_files:
+            print(
+                f"- {message}"
+            )
 
     if not dataframes:
         raise ValueError(
-            "Tidak ada data prediksi valid untuk dievaluasi."
+            "Tidak ada hasil prediksi valid "
+            "untuk dievaluasi."
         )
 
     return pd.concat(
@@ -109,19 +262,21 @@ def load_predictions():
 
 # HITUNG METRIK EVALUASI
 def evaluate_model(actual, predicted):
-    # Mean Absolute Error
+
     mae = mean_absolute_error(
         actual,
         predicted,
     )
-    # Mean Squared Error
+
     mse = mean_squared_error(
         actual,
         predicted,
     )
-    # Root Mean Squared Error
-    rmse = np.sqrt(mse)
-    # Coefficient of Determination
+
+    rmse = np.sqrt(
+        mse
+    )
+
     if len(actual) >= 2:
         r2 = r2_score(
             actual,
@@ -137,73 +292,242 @@ def evaluate_model(actual, predicted):
         "R2": r2,
     }
 
+
 # URUTAN HASIL EVALUASI
 def sort_evaluation_results(results_df):
+
+    results_df = results_df.copy()
+
     algorithm_order = {
         "XGBoost": 0,
         "SVR": 1,
     }
+
     dataset_order = {
         "no2": 0,
         "no2_meteorologi": 1,
     }
+
     split_order = {
         "70_30": 0,
         "80_20": 1,
     }
-    results_df = results_df.copy()
+
+    lag_order = {
+        "lag1": 0,
+        "lag12": 1,
+        "lag123": 2,
+    }
+
     results_df["_algorithm_order"] = (
         results_df["algorithm"].map(
             algorithm_order
         )
     )
+
     results_df["_dataset_order"] = (
         results_df["dataset"].map(
             dataset_order
         )
     )
+
     results_df["_split_order"] = (
         results_df["split"].map(
             split_order
         )
     )
-    results_df = (
-        results_df.sort_values(
-            [
-                "_algorithm_order",
-                "_dataset_order",
-                "_split_order",
-            ],
-            na_position="last",
+
+    results_df["_lag_order"] = (
+        results_df["lag_configuration"].map(
+            lag_order
         )
-        .drop(
-            columns=[
-                "_algorithm_order",
-                "_dataset_order",
-                "_split_order",
-            ]
-        )
-        .reset_index(drop=True)
     )
-    return results_df
 
+    results_df = results_df.sort_values(
+        [
+            "_algorithm_order",
+            "_dataset_order",
+            "_split_order",
+            "_lag_order",
+        ],
+        na_position="last",
+    )
 
-# TAMPILKAN TABEL
+    results_df = results_df.drop(
+        columns=[
+            "_algorithm_order",
+            "_dataset_order",
+            "_split_order",
+            "_lag_order",
+        ]
+    )
+
+    return results_df.reset_index(
+        drop=True
+    )
+
+# MENAMPILKAN TABEL
 def display_table(title, dataframe):
 
-    print("\n" )
+    print("\n" + "=" * 100)
     print(title)
+    print("=" * 100)
 
     if dataframe.empty:
-        print("Tidak ada data.")
+        print(
+            "Tidak ada data."
+        )
         return
 
     print(
         dataframe.to_string(
             index=False,
-            float_format=lambda value: f"{value:.6f}",
+            float_format=lambda value: (
+                f"{value:.6f}"
+            ),
         )
     )
+
+# MENYIMPAN TABEL
+def save_table(dataframe, filename):
+
+    output_path = (
+        EVALUATION_DIR / filename
+    )
+
+    dataframe.to_csv(
+        output_path,
+        index=False,
+    )
+
+    print(
+        f"\nFile tersimpan: {output_path}"
+    )
+
+
+# MEMERIKSA 24 SKENARIO
+def check_scenarios(results_df):
+
+    expected_scenarios = {
+        (
+            algorithm,
+            lag,
+            dataset,
+            split,
+        )
+        for algorithm in ALGORITHMS
+        for lag in LAG_CONFIGURATIONS
+        for dataset in DATASETS
+        for split in SPLITS
+    }
+
+    actual_scenarios = {
+        (
+            row.algorithm,
+            row.lag_configuration,
+            row.dataset,
+            row.split,
+        )
+        for row in results_df.itertuples()
+    }
+
+    missing_scenarios = (
+        expected_scenarios - actual_scenarios
+    )
+
+    print(
+        "\nJUMLAH SKENARIO"
+    )
+
+    print(
+        f"Skenario tersedia: "
+        f"{len(actual_scenarios)} / "
+        f"{len(expected_scenarios)}"
+    )
+
+    if missing_scenarios:
+
+        print(
+            "\nSKENARIO YANG BELUM TERSEDIA:"
+        )
+
+        algorithm_order = {
+            "XGBoost": 0,
+            "SVR": 1,
+        }
+
+        dataset_order = {
+            "no2": 0,
+            "no2_meteorologi": 1,
+        }
+
+        split_order = {
+            "70_30": 0,
+            "80_20": 1,
+        }
+
+        lag_order = {
+            "lag1": 0,
+            "lag12": 1,
+            "lag123": 2,
+        }
+
+        for (
+            algorithm,
+            lag,
+            dataset,
+            split,
+        ) in sorted(
+            missing_scenarios,
+            key=lambda item: (
+                algorithm_order[item[0]],
+                dataset_order[item[2]],
+                split_order[item[3]],
+                lag_order[item[1]],
+            ),
+        ):
+
+            print(
+                f"- {algorithm} | "
+                f"{dataset} | "
+                f"{split} | "
+                f"{lag}"
+            )
+
+    return (
+        expected_scenarios,
+        actual_scenarios,
+        missing_scenarios,
+    )
+
+
+# MEMBUAT PERINGKAT BERDASARKAN RMSE DAN MAE
+def create_ranking(dataframe):
+
+    ranked = dataframe.sort_values(
+        [
+            "RMSE",
+            "MAE",
+        ],
+        ascending=[
+            True,
+            True,
+        ],
+        na_position="last",
+    ).reset_index(
+        drop=True
+    )
+
+    ranked.insert(
+        0,
+        "rank",
+        np.arange(
+            1,
+            len(ranked) + 1,
+        ),
+    )
+
+    return ranked
 
 
 # EVALUASI SELURUH EKSPERIMEN
@@ -211,37 +535,58 @@ def run_evaluation():
     predictions = load_predictions()
     results = []
 
-    # KELOMPOKKAN DATA BERDASARKAN EKSPERIMEN
     grouped = predictions.groupby(
         [
             "algorithm",
+            "lag_configuration",
             "dataset",
             "split",
+            "prediction_file",
         ],
         dropna=False,
+        sort=False,
     )
 
     for (
         algorithm,
+        lag_configuration,
         dataset,
         split,
+        prediction_file,
     ), group in grouped:
-        actual = group["actual"].to_numpy()
-        predicted = group["predicted"].to_numpy()
+
+        actual = group[
+            "actual"
+        ].to_numpy()
+
+        predicted = group[
+            "predicted"
+        ].to_numpy()
+
         metrics = evaluate_model(
             actual,
             predicted,
         )
+
         result = {
             "algorithm": algorithm,
             "dataset": dataset,
             "split": split,
+            "lag_configuration": (
+                lag_configuration
+            ),
             "total_data": len(group),
             **metrics,
+            "prediction_file": prediction_file,
         }
 
-        results.append(result)
-    results_df = pd.DataFrame(results)
+        results.append(
+            result
+        )
+
+    results_df = pd.DataFrame(
+        results
+    )
 
     if results_df.empty:
         raise ValueError(
@@ -252,10 +597,20 @@ def run_evaluation():
         results_df
     )
 
-    # TABEL 1: HASIL EVALUASI XGBOOST
+    # Memeriksa kelengkapan skenario.
+    (
+        expected_scenarios,
+        actual_scenarios,
+        missing_scenarios,
+    ) = check_scenarios(
+        results_df
+    )
+
+    # KOLOM TABEL EVALUASI
     display_columns = [
         "dataset",
         "split",
+        "lag_configuration",
         "total_data",
         "MAE",
         "MSE",
@@ -263,6 +618,7 @@ def run_evaluation():
         "R2",
     ]
 
+    # TABEL 1: EVALUASI XGBOOST
     xgboost_results = results_df[
         results_df["algorithm"] == "XGBoost"
     ][display_columns].copy()
@@ -272,19 +628,12 @@ def run_evaluation():
         xgboost_results,
     )
 
-    # Simpan tabel XGBoost
-    xgboost_path = (
-        EVALUATION_DIR
-        / "evaluation_xgboost.csv"
+    save_table(
+        xgboost_results,
+        "evaluation_xgboost.csv",
     )
 
-    xgboost_results.to_csv(
-        xgboost_path,
-        index=False,
-    )
-
-    # TABEL 2: HASIL EVALUASI SVR
-
+    # TABEL 2: EVALUASI SVR
     svr_results = results_df[
         results_df["algorithm"] == "SVR"
     ][display_columns].copy()
@@ -294,49 +643,33 @@ def run_evaluation():
         svr_results,
     )
 
-    # Simpan tabel SVR
-    svr_path = (
-        EVALUATION_DIR
-        / "evaluation_svr.csv"
+    save_table(
+        svr_results,
+        "evaluation_svr.csv",
     )
 
-    svr_results.to_csv(
-        svr_path,
-        index=False,
-    )
-
-    # TABEL 3: PERINGKAT SPLIT 70:30
-    split_70 = results_df[
-        results_df["split"] == "70_30"
-    ].copy()
-
-    split_70 = split_70.sort_values(
-        ["RMSE", "MAE"],
-        ascending=[True, True],
-    ).reset_index(drop=True)
-
-    split_70.insert(
-        0,
-        "rank_rmse",
-        split_70["RMSE"]
-        .rank(
-            method="min",
-            ascending=True,
-        )
-        .astype(int),
-    )
-
+    # KOLOM TABEL PERINGKAT
     comparison_columns = [
-        "rank_rmse",
+        "rank",
         "algorithm",
         "dataset",
         "split",
+        "lag_configuration",
         "total_data",
         "MAE",
         "MSE",
         "RMSE",
         "R2",
     ]
+
+    # TABEL 3: PERINGKAT SPLIT 70:30
+    split_70 = results_df[
+        results_df["split"] == "70_30"
+    ].copy()
+
+    split_70 = create_ranking(
+        split_70
+    )
 
     split_70 = split_70[
         comparison_columns
@@ -348,15 +681,9 @@ def run_evaluation():
         split_70,
     )
 
-    # Simpan peringkat 70:30
-    split_70_path = (
-        EVALUATION_DIR
-        / "evaluation_rank_70_30.csv"
-    )
-
-    split_70.to_csv(
-        split_70_path,
-        index=False,
+    save_table(
+        split_70,
+        "evaluation_rank_70_30.csv",
     )
 
     # TABEL 4: PERINGKAT SPLIT 80:20
@@ -364,20 +691,8 @@ def run_evaluation():
         results_df["split"] == "80_20"
     ].copy()
 
-    split_80 = split_80.sort_values(
-        ["RMSE", "MAE"],
-        ascending=[True, True],
-    ).reset_index(drop=True)
-
-    split_80.insert(
-        0,
-        "rank_rmse",
-        split_80["RMSE"]
-        .rank(
-            method="min",
-            ascending=True,
-        )
-        .astype(int),
+    split_80 = create_ranking(
+        split_80
     )
 
     split_80 = split_80[
@@ -390,72 +705,49 @@ def run_evaluation():
         split_80,
     )
 
-    # Simpan peringkat 80:20
-    split_80_path = (
-        EVALUATION_DIR
-        / "evaluation_rank_80_20.csv"
+    save_table(
+        split_80,
+        "evaluation_rank_80_20.csv",
     )
 
-    split_80.to_csv(
-        split_80_path,
-        index=False,
-    )
-
-    # TABEL 5: HASIL KESELURUHAN + PERINGKAT
-    overall_results = results_df.sort_values(
-        ["RMSE", "MAE"],
-        ascending=[True, True],
-    ).reset_index(drop=True)
-
-    overall_results.insert(
-        0,
-        "rank",
-        overall_results["RMSE"]
-        .rank(method="min", ascending=True)
-        .astype(int),
+    # TABEL 5: PERINGKAT KESELURUHAN
+    overall_results = create_ranking(
+        results_df.copy()
     )
 
     overall_results = overall_results[
-        [
-            "rank",
-            "algorithm",
-            "dataset",
-            "split",
-            "total_data",
-            "MAE",
-            "MSE",
-            "RMSE",
-            "R2",
-        ]
+        comparison_columns
     ]
 
     display_table(
-        "TABEL 5. HASIL EVALUASI KESELURUHAN "
-        "(PERINGKAT BERDASARKAN RMSE)",
+        "TABEL 5. PERINGKAT KESELURUHAN "
+        "XGBOOST VS SVR BERDASARKAN RMSE",
         overall_results,
     )
 
-    # Simpan peringkat keseluruhan
-    overall_path = (
-        EVALUATION_DIR
-        / "evaluation_rank_overall.csv"
-    )
-
-    overall_results.to_csv(
-        overall_path,
-        index=False,
+    save_table(
+        overall_results,
+        "evaluation_rank_overall.csv",
     )
 
     # SIMPAN SELURUH HASIL EVALUASI
-    output_path = (
-        EVALUATION_DIR
-        / "evaluation_results.csv"
+    save_table(
+        results_df,
+        "evaluation_results.csv",
     )
 
-    results_df.to_csv(
-        output_path,
-        index=False,
-    )
+
+    if not missing_scenarios:
+        print(
+            "Seluruh 24 skenario berhasil dievaluasi."
+        )
+
+        best_model = overall_results.iloc[0]
+
+    else:
+        print(
+            "Peringkat di atas hanya berdasarkan skenario yang tersedia."
+        )
 
     return (
         results_df,
@@ -463,8 +755,11 @@ def run_evaluation():
         svr_results,
         split_70,
         split_80,
+        overall_results,
     )
 
+
 # MAIN
+
 if __name__ == "__main__":
     run_evaluation()

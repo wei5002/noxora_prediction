@@ -40,7 +40,7 @@ WEATHER_URL = (
     "https://api.open-meteo.com/v1/forecast"
 )
 TIMEZONE = "Asia/Jakarta"
-FEATURES = [
+SVR_FEATURES = [
     "LAG1",
     "LAG2",
     "LAG3",
@@ -54,7 +54,7 @@ MODEL_PATH = (
     ML_DIR
     / "models"
     / "svr"
-    / "svr_no2_meteorologi_80_20.joblib"
+    / "svr_lag123_no2_meteorologi_80_20.joblib"
 )
 OUTPUT_DIR = (
     ML_DIR
@@ -387,7 +387,7 @@ def main():
 
     # PREDIKSI
     predictions = model.predict(
-        X[FEATURES]
+        X[SVR_FEATURES]
     )
 
     X[

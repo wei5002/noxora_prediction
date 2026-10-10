@@ -39,14 +39,9 @@ WEATHER_URL = (
     "https://api.open-meteo.com/v1/forecast"
 )
 TIMEZONE = "Asia/Jakarta"
-FEATURES = [
+XGBOOST_FEATURES = [
     "LAG1",
     "LAG2",
-    "LAG3",
-    "temperature_2m",
-    "relative_humidity_2m",
-    "rain",
-    "wind_speed_10m",
 ]
 
 # 2. LOKASI MODEL DAN OUTPUT
@@ -55,7 +50,7 @@ MODEL_PATH = (
     ML_DIR
     / "models"
     / "xgboost"
-    / "xgboost_no2_meteorologi_80_20.joblib"
+    / "xgboost_lag12_no2_80_20.joblibb"
 )
 OUTPUT_DIR = (
     ML_DIR
@@ -80,7 +75,6 @@ def fetch_api(url, params):
 
 
 # 4. AMBIL DATA NO2 HOURLY
-
 def fetch_no2():
 
     params = {
@@ -135,7 +129,6 @@ def fetch_no2():
 
 
 # 5. AMBIL DATA METEOROLOGI HOURLY
-
 def fetch_weather():
     params = {
         "latitude": ",".join(
@@ -389,7 +382,7 @@ def main():
 
     # PREDIKSI
     predictions = model.predict(
-        X[FEATURES]
+        X[XGBOOST_FEATURES]
     )
     X[
         "predicted_nitrogen_dioxide"

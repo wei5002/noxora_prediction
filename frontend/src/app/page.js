@@ -203,16 +203,16 @@ export default function Home() {
     const load = async () => {
       try {
         const API_URL = process.env.NEXT_PUBLIC_API_URL;
-
         const res = await fetch(`${API_URL}/api/ml/realtime`);
+        const result = await res.json().catch(() => null);
 
         if (!res.ok) {
-          throw new Error("Gagal mengambil data realtime.");
+          throw new Error(
+            result?.message ||
+              result?.error ||
+              `Gagal mengambil data realtime. HTTP ${res.status}`,
+          );
         }
-
-        const result = await res.json();
-
-        console.log("DATA REALTIME:", result);
 
         if (!result.success || !Array.isArray(result.data)) {
           throw new Error("Data realtime tidak tersedia.");
@@ -238,36 +238,6 @@ export default function Home() {
 
     return () => clearInterval(timer);
   }, [selectedLocation]);
-
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const API_URL = process.env.NEXT_PUBLIC_API_URL;
-
-        const res = await fetch(`${API_URL}/api/ml/realtime`);
-
-        if (!res.ok) {
-          throw new Error("Gagal mengambil data realtime.");
-        }
-
-        const result = await res.json();
-
-        if (!result.success || !Array.isArray(result.data)) {
-          throw new Error("Data realtime tidak tersedia.");
-        }
-
-        setAllLocations(result.data);
-      } catch (err) {
-        console.error(err);
-      }
-    };
-
-    load();
-
-    const timer = setInterval(load, 5 * 60 * 1000);
-
-    return () => clearInterval(timer);
-  }, []);
 
   return (
     <Flex

@@ -1,0 +1,5 @@
+algorithm,lag_configuration,dataset,split,train_data,test_data,training_minutes,model_file,prediction_file
+SVR,lag1,no2,70_30,220390,94460,21.331888473033906,svr_lag1_no2_70_30.joblib,svr_lag1_no2_70_30_predictions.csv
+SVR,lag1,no2,80_20,251880,62970,26.69309450785319,svr_lag1_no2_80_20.joblib,svr_lag1_no2_80_20_predictions.csv
+SVR,lag1,no2_meteorologi,70_30,220390,94460,77.66334530115128,svr_lag1_no2_meteorologi_70_30.joblib,svr_lag1_no2_meteorologi_70_30_predictions.csv
+SVR,lag1,no2_meteorologi,80_20,251880,62970,107.59448401530584,svr_lag1_no2_meteorologi_80_20.joblib,svr_lag1_no2_meteorologi_80_20_predictions.csv
