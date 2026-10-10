@@ -590,119 +590,103 @@ def get_cached_prediction():
     global _memory_cache
     global _memory_cache_at
 
-    now = time.time()
-
-    # 1. Gunakan cache memori jika masih berlaku.
-    if (
-        _memory_cache is not None
-        and now - _memory_cache_at < CACHE_SECONDS
-    ):
-        result = dict(_memory_cache)
-        result["cached"] = True
-        return result
-
     connection = None
     lock_acquired = False
+    last_payload = None
+    last_updated_at = None
 
-    stale_payload = None
-    stale_updated_at = None
+    # 1. Gunakan cache di memory jika tersedia.
+    if _memory_cache is not None:
+        age = time.time() - _memory_cache_at
+
+        if age < CACHE_SECONDS:
+            response = dict(_memory_cache)
+            response["cached"] = True
+            response["realtime_available"] = True
+            return response
 
     try:
+        # 2. Baca cache terakhir dari PostgreSQL.
         connection = get_database_connection()
 
-        # 2. Pastikan tabel cache tersedia dan baca cache Neon.
         with connection.cursor() as cursor:
-            cursor.execute(
-                """
+            cursor.execute("""
                 CREATE TABLE IF NOT EXISTS realtime_prediction_cache (
                     cache_key VARCHAR(50) PRIMARY KEY,
                     payload JSONB NOT NULL,
                     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                 )
-                """
-            )
+            """)
 
-            cursor.execute(
-                """
+            cursor.execute("""
                 SELECT payload, updated_at
                 FROM realtime_prediction_cache
                 WHERE cache_key = %s
-                """,
-                (CACHE_KEY,),
-            )
+            """, (CACHE_KEY,))
 
             row = cursor.fetchone()
 
-            if row:
-                stale_payload, stale_updated_at = row
-
-                if isinstance(stale_payload, str):
-                    stale_payload = json.loads(stale_payload)
-
         connection.commit()
 
-        age = cache_age_seconds(stale_updated_at)
+        if row:
+            last_payload, last_updated_at = row
 
-        print(
-            "CACHE DEBUG:",
-            {
-                "cache_found": stale_payload is not None,
-                "cache_age_seconds": age,
-                "cache_seconds": CACHE_SECONDS,
-                "cache_usable": is_cache_usable(
-                    stale_updated_at
-                ),
-            },
-        )
+            if isinstance(last_payload, str):
+                last_payload = json.loads(last_payload)
 
-        # 3. Jika cache masih berlaku, langsung gunakan.
+        # 3. Jika cache masih baru, langsung gunakan.
+        age = cache_age_seconds(last_updated_at)
+
+        print("CACHE STATUS:", {
+            "found": last_payload is not None,
+            "age_seconds": age,
+            "cache_seconds": CACHE_SECONDS
+        })
+
         if (
-            stale_payload is not None
+            last_payload is not None
             and age is not None
             and age < CACHE_SECONDS
         ):
-            _memory_cache = stale_payload
+            _memory_cache = last_payload
             _memory_cache_at = time.time()
 
-            response = dict(stale_payload)
+            response = dict(last_payload)
             response["cached"] = True
-            response["cache_warning"] = None
-
+            response["realtime_available"] = True
             return response
 
-        # 4. Ambil lock untuk mencegah pembaruan bersamaan.
+        # 4. Coba memperoleh lock agar tidak ada beberapa
+        # request yang memperbarui prediksi secara bersamaan.
         with connection.cursor() as cursor:
             cursor.execute(
                 "SELECT pg_try_advisory_lock(%s)",
-                (742001,),
+                (742001,)
             )
             lock_acquired = cursor.fetchone()[0]
 
+        # Jika request lain sedang memperbarui data,
+        # gunakan cache lama jika tersedia.
         if not lock_acquired:
-            if (
-                stale_payload is not None
-                and is_cache_usable(stale_updated_at)
-            ):
+            if last_payload is not None:
                 return add_cache_metadata(
-                    stale_payload,
-                    stale_updated_at,
-                    stale=True,
+                    last_payload,
+                    last_updated_at,
+                    stale=True
                 )
 
             raise RuntimeError(
-                "Pembaruan prediksi sedang berlangsung. "
-                "Coba kembali beberapa saat lagi."
+                "Prediksi sedang diproses dan cache belum tersedia."
             )
 
-        # 5. Cache perlu diperbarui. Ambil data terbaru.
-        print("CACHE MISS: mencoba memperbarui prediksi.")
+        # 5. Ambil data terbaru hanya ketika cache perlu diperbarui.
+        print("CACHE MISS: mengambil data terbaru dari Open-Meteo.")
 
         result = generate_prediction()
 
-        # 6. Simpan hasil prediksi terbaru ke Neon.
+        # 6. Simpan hasil baru hanya jika prediksi berhasil.
         with connection.cursor() as cursor:
-            cursor.execute(
-                """
+            cursor.execute("""
                 INSERT INTO realtime_prediction_cache
                     (cache_key, payload, updated_at)
                 VALUES (%s, %s::jsonb, NOW())
@@ -710,12 +694,10 @@ def get_cached_prediction():
                 DO UPDATE SET
                     payload = EXCLUDED.payload,
                     updated_at = NOW()
-                """,
-                (
-                    CACHE_KEY,
-                    json.dumps(result, allow_nan=False),
-                ),
-            )
+            """, (
+                CACHE_KEY,
+                json.dumps(result, allow_nan=False)
+            ))
 
         connection.commit()
 
@@ -724,30 +706,32 @@ def get_cached_prediction():
 
         response = dict(result)
         response["cached"] = False
+        response["realtime_available"] = True
         response["cache_warning"] = None
 
         return response
 
     except Exception as error:
-        print(f"Gagal memperbarui prediksi: {error}")
+        print(f"Gagal mengambil data terbaru: {error}")
 
-        # 7. Jika pembaruan gagal, gunakan cache lama
-        # selama usianya belum melebihi 24 jam.
-        if (
-            stale_payload is not None
-            and is_cache_usable(stale_updated_at)
-        ):
-            print("CACHE FALLBACK: menggunakan prediksi tersimpan.")
+        # 7. Jika API gagal, kembalikan prediksi terakhir.
+        if last_payload is not None:
+            print("CACHE FALLBACK: menggunakan prediksi terakhir.")
 
-            _memory_cache = stale_payload
+            _memory_cache = last_payload
             _memory_cache_at = time.time()
 
-            return add_cache_metadata(
-                stale_payload,
-                stale_updated_at,
-                stale=True,
+            response = dict(last_payload)
+            response["cached"] = True
+            response["realtime_available"] = False
+            response["cache_warning"] = (
+                "Data realtime tidak tersedia. "
+                "Menampilkan prediksi terakhir yang tersimpan."
             )
 
+            return response
+
+        # Belum ada cache sama sekali.
         raise
 
     finally:
@@ -757,17 +741,14 @@ def get_cached_prediction():
                     with connection.cursor() as cursor:
                         cursor.execute(
                             "SELECT pg_advisory_unlock(%s)",
-                            (742001,),
+                            (742001,)
                         )
-
                     connection.commit()
-
             except Exception as error:
-                print(f"Gagal melepas advisory lock: {error}")
-
+                print(f"Gagal melepas lock: {error}")
             finally:
                 connection.close()
-
+                
 class handler(BaseHTTPRequestHandler):
     def send_json(self, status_code, payload):
         body = json.dumps(
