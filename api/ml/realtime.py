@@ -237,10 +237,12 @@ def fetch_api(url, params):
                 timeout=REQUEST_TIMEOUT,
             )
 
+            # Jangan mengulang request 429 secara langsung.
             if response.status_code == 429:
                 retry_after = response.headers.get("Retry-After")
+
                 raise requests.HTTPError(
-                    f"Open-Meteo HTTP 429. "
+                    "Open-Meteo membatasi permintaan (HTTP 429). "
                     f"Retry-After: {retry_after or 'tidak tersedia'}",
                     response=response,
                 )
@@ -257,10 +259,12 @@ def fetch_api(url, params):
                 else None
             )
 
+            # Error 429 ditangani dengan cache, bukan retry langsung.
             if status == 429:
                 raise
 
-            if status is not None and status < 500:
+            # Error 4xx lainnya tidak perlu diulang.
+            if status is not None and 400 <= status < 500:
                 raise
 
         except requests.RequestException as error:
@@ -826,96 +830,60 @@ class handler(BaseHTTPRequestHandler):
                     "error": str(error),
                 },
             )
-
-def do_GET(self):
-    try:
-        result = get_cached_prediction()
-        self.send_json(200, result)
-
-    except requests.RequestException as error:
-        self.send_json(
-            502,
-            {
-                "success": False,
-                "message": (
-                    "Gagal mengambil data dari Open-Meteo "
-                    "dan cache sebelumnya tidak tersedia."
-                ),
-                "error": str(error),
-            },
-        )
-
-    except RuntimeError as error:
-        message = str(error)
-
-        if "Pembaruan prediksi sedang berlangsung" in message:
-            self.send_json(
-                503,
-                {
-                    "success": False,
-                    "message": message,
-                },
-            )
-        else:
-            print(f"Kesalahan konfigurasi atau runtime: {error}")
-            self.send_json(
-                500,
-                {
-                    "success": False,
-                    "message": (
-                        "Terjadi kesalahan pada backend Noxora."
-                    ),
-                    "error": message,
-                },
-            )
-
-    except Exception as error:
-        print(f"Kesalahan endpoint realtime: {error}")
-        self.send_json(
-            500,
-            {
-                "success": False,
-                "message": (
-                    "Terjadi kesalahan pada proses prediksi "
-                    "dan cache sebelumnya tidak tersedia."
-                ),
-                "error": str(error),
-            },
-        )
+            
+    def do_GET(self):
         try:
             result = get_cached_prediction()
             self.send_json(200, result)
 
         except requests.RequestException as error:
+            print(f"Error Open-Meteo: {error}")
             self.send_json(
                 502,
                 {
                     "success": False,
                     "message": (
-                        "Gagal mengambil data dari Open-Meteo dan cache sebelumnya tidak tersedia."
+                        "Gagal mengambil data dari Open-Meteo "
+                        "dan cache sebelumnya tidak tersedia."
                     ),
                     "error": str(error),
                 },
             )
 
         except RuntimeError as error:
+            message = str(error)
+            print(f"Error runtime: {message}")
+
+            if "Pembaruan prediksi sedang berlangsung" in message:
                 self.send_json(
                     503,
                     {
                         "success": False,
-                        "message": str(error),
+                        "message": message,
+                    },
+                )
+            else:
+                self.send_json(
+                    500,
+                    {
+                        "success": False,
+                        "message": (
+                            "Terjadi kesalahan pada backend Noxora."
+                        ),
+                        "error": message,
                     },
                 )
 
         except Exception as error:
-            print(f"Kesalahan endpoint realtime: {error}")
+            print(f"Error endpoint realtime: {error}")
             self.send_json(
-                  500,
-                    {
-                     "success": False,
-                        "message": (
-                        "Terjadi kesalahan pada proses prediksi dan cache sebelumnya tidak tersedia."
-                     ),
-                     "error": str(error),
-                    },
-               )
+                500,
+                {
+                    "success": False,
+                    "message": (
+                        "Terjadi kesalahan pada proses prediksi "
+                        "dan cache sebelumnya tidak tersedia."
+                    ),
+                    "error": str(error),
+                },
+            )
