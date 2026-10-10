@@ -603,42 +603,14 @@ def get_cached_prediction():
 
     connection = None
     lock_acquired = False
+
     stale_payload = None
     stale_updated_at = None
 
     try:
         connection = get_database_connection()
 
-        # 2. Cegah beberapa permintaan memperbarui cache bersamaan.
-        with connection.cursor() as cursor:
-            cursor.execute(
-                "SELECT pg_try_advisory_lock(%s)",
-                (742001,),
-            )
-            lock_acquired = cursor.fetchone()[0]
-
-        if not lock_acquired:
-            cached_payload, cached_updated_at = load_persistent_cache()
-
-            if (
-                cached_payload is not None
-                and is_cache_usable(cached_updated_at)
-            ):
-                response = add_cache_metadata(
-                    cached_payload,
-                    cached_updated_at,
-                    stale=(
-                        cache_age_seconds(cached_updated_at)
-                        >= CACHE_SECONDS
-                    ),
-                )
-                return response
-
-            raise RuntimeError(
-                "Pembaruan prediksi sedang berlangsung. Coba kembali beberapa saat lagi."
-            )
-
-        # 3. Ambil cache yang tersimpan di PostgreSQL.
+        # 2. Pastikan tabel cache tersedia dan baca cache Neon.
         with connection.cursor() as cursor:
             cursor.execute(
                 """
@@ -661,34 +633,73 @@ def get_cached_prediction():
 
             row = cursor.fetchone()
 
+            if row:
+                stale_payload, stale_updated_at = row
+
+                if isinstance(stale_payload, str):
+                    stale_payload = json.loads(stale_payload)
+
         connection.commit()
 
-        if row:
-            stale_payload, stale_updated_at = row
+        age = cache_age_seconds(stale_updated_at)
 
-            if isinstance(stale_payload, str):
-                stale_payload = json.loads(stale_payload)
+        print(
+            "CACHE DEBUG:",
+            {
+                "cache_found": stale_payload is not None,
+                "cache_age_seconds": age,
+                "cache_seconds": CACHE_SECONDS,
+                "cache_usable": is_cache_usable(
+                    stale_updated_at
+                ),
+            },
+        )
 
-            age = cache_age_seconds(stale_updated_at)
+        # 3. Jika cache masih berlaku, langsung gunakan.
+        if (
+            stale_payload is not None
+            and age is not None
+            and age < CACHE_SECONDS
+        ):
+            _memory_cache = stale_payload
+            _memory_cache_at = time.time()
 
-            # 4. Gunakan cache jika belum kedaluwarsa.
+            response = dict(stale_payload)
+            response["cached"] = True
+            response["cache_warning"] = None
+
+            return response
+
+        # 4. Ambil lock untuk mencegah pembaruan bersamaan.
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT pg_try_advisory_lock(%s)",
+                (742001,),
+            )
+            lock_acquired = cursor.fetchone()[0]
+
+        if not lock_acquired:
             if (
-                is_cache_usable(stale_updated_at)
-                and age < CACHE_SECONDS
+                stale_payload is not None
+                and is_cache_usable(stale_updated_at)
             ):
-                _memory_cache = stale_payload
-                _memory_cache_at = time.time()
-
                 return add_cache_metadata(
                     stale_payload,
                     stale_updated_at,
-                    stale=False,
+                    stale=True,
                 )
 
-        # 5. Cache tidak tersedia atau sudah waktunya diperbarui.
+            raise RuntimeError(
+                "Pembaruan prediksi sedang berlangsung. "
+                "Coba kembali beberapa saat lagi."
+            )
+
+        # 5. Cache perlu diperbarui. Ambil data terbaru.
+        print("CACHE MISS: mencoba memperbarui prediksi.")
+
         result = generate_prediction()
 
-        # 6. Simpan hasil prediksi terbaru ke PostgreSQL.
+        # 6. Simpan hasil prediksi terbaru ke Neon.
         with connection.cursor() as cursor:
             cursor.execute(
                 """
@@ -720,11 +731,14 @@ def get_cached_prediction():
     except Exception as error:
         print(f"Gagal memperbarui prediksi: {error}")
 
-        # 7. Jika API gagal, gunakan cache lama yang masih layak.
+        # 7. Jika pembaruan gagal, gunakan cache lama
+        # selama usianya belum melebihi 24 jam.
         if (
             stale_payload is not None
             and is_cache_usable(stale_updated_at)
         ):
+            print("CACHE FALLBACK: menggunakan prediksi tersimpan.")
+
             _memory_cache = stale_payload
             _memory_cache_at = time.time()
 
@@ -745,9 +759,12 @@ def get_cached_prediction():
                             "SELECT pg_advisory_unlock(%s)",
                             (742001,),
                         )
+
                     connection.commit()
+
             except Exception as error:
                 print(f"Gagal melepas advisory lock: {error}")
+
             finally:
                 connection.close()
 
@@ -782,54 +799,6 @@ class handler(BaseHTTPRequestHandler):
         )
         self.end_headers()
 
-    def do_GET(self):
-        try:
-            result = get_cached_prediction()
-            self.send_json(200, result)
-
-        except requests.RequestException as error:
-            print(f"Error Open-Meteo: {error}")
-            self.send_json(
-                502,
-                {
-                    "success": False,
-                    "message": "Gagal mengambil data dari Open-Meteo dan cache sebelumnya tidak tersedia.",
-                    "error": str(error),
-                },
-            )
-
-        except RuntimeError as error:
-            message = str(error)
-            print(f"Error runtime: {message}")
-
-            if "Pembaruan prediksi sedang berlangsung" in message:
-                self.send_json(
-                    503,
-                    {
-                        "success": False,
-                        "message": message,
-                    },
-                )
-            else:
-                self.send_json(
-                    500,
-                    {
-                        "success": False,
-                        "message": "Terjadi kesalahan pada backend Noxora.",
-                        "error": message,
-                    },
-                )
-
-        except Exception as error:
-            print(f"Error endpoint realtime: {error}")
-            self.send_json(
-                500,
-                {
-                    "success": False,
-                    "message": "Terjadi kesalahan pada proses prediksi dan cache sebelumnya tidak tersedia.",
-                    "error": str(error),
-                },
-            )
             
     def do_GET(self):
         try:
