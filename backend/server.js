@@ -13,14 +13,17 @@ import profileRoutes from "./routes/profileRoutes.js";
 import passwordRoutes from "./routes/passwordRoutes.js";
 
 dotenv.config();
+
 const app = express();
 const PORT = process.env.PORT || 5000;
 
 // PATH
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const ML_DIR = path.join(__dirname, "..", "ml");
+
 const REALTIME_CSV = path.join(ML_DIR, "data", "api", "realtime_api.csv");
 
 const SVR_PREDICTION_CSV = path.join(
@@ -30,7 +33,6 @@ const SVR_PREDICTION_CSV = path.join(
   "svr_realtime_predictions.csv",
 );
 
-// Hasil prediksi XGBoost
 const XGBOOST_PREDICTION_CSV = path.join(
   ML_DIR,
   "results",
@@ -38,44 +40,139 @@ const XGBOOST_PREDICTION_CSV = path.join(
   "xgboost_realtime_predictions.csv",
 );
 
+const REFRESH_INTERVAL = 5 * 60 * 1000;
+
+// STATUS PIPELINE
+
+let lastMLAttemptAt = 0;
+let lastMLSuccessAt = null;
+let lastMLError = null;
+let mlPipelinePromise = null;
+
 // MIDDLEWARE
+
 app.use(cors());
 app.use(express.json());
 
-// TEST BACKEND
-app.get("/", (req, res) => {
-  res.json({
-    message: "Backend Noxora berhasil berjalan!",
-  });
-});
+// HELPER: FORMAT ANGKA
 
-// TEST DATABASE
-app.get("/test-db", async (req, res) => {
-  try {
-    const result = await pool.query("SELECT NOW()");
-
-    res.json({
-      message: "Database berhasil terhubung!",
-      time: result.rows[0],
-    });
-  } catch (error) {
-    console.error("Database error:", error);
-
-    res.status(500).json({
-      message: "Database gagal terhubung",
-    });
+function toNumber(value) {
+  if (value === undefined || value === null || String(value).trim() === "") {
+    return null;
   }
-});
 
-// MENJALANKAN PYTHON SCRIPT
+  const number = Number(value);
+
+  return Number.isFinite(number) ? number : null;
+}
+
+// HELPER: MEMBACA CSV
+
+function readCSV(filePath) {
+  if (!fs.existsSync(filePath)) {
+    throw new Error(`File CSV tidak ditemukan: ${filePath}`);
+  }
+
+  const content = fs.readFileSync(filePath, "utf8");
+
+  if (!content.trim()) {
+    return [];
+  }
+
+  const lines = content
+    .replace(/^\uFEFF/, "")
+    .trim()
+    .split(/\r?\n/)
+    .filter((line) => line.trim() !== "");
+
+  if (lines.length < 2) {
+    return [];
+  }
+
+  // Parser CSV sederhana yang mendukung koma di dalam tanda kutip.
+  function parseCSVLine(line) {
+    const values = [];
+    let value = "";
+    let inQuotes = false;
+
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+
+      if (char === '"') {
+        if (inQuotes && line[i + 1] === '"') {
+          value += '"';
+          i++;
+        } else {
+          inQuotes = !inQuotes;
+        }
+      } else if (char === "," && !inQuotes) {
+        values.push(value.trim());
+        value = "";
+      } else {
+        value += char;
+      }
+    }
+
+    values.push(value.trim());
+
+    return values;
+  }
+
+  const headers = parseCSVLine(lines[0]);
+
+  return lines.slice(1).map((line) => {
+    const values = parseCSVLine(line);
+    const row = {};
+
+    headers.forEach((header, index) => {
+      row[header] = values[index] ?? "";
+    });
+
+    return row;
+  });
+}
+
+// HELPER: MEMBACA CSV JIKA TERSEDIA
+
+function readCSVIfExists(filePath) {
+  if (!fs.existsSync(filePath)) {
+    return [];
+  }
+
+  try {
+    return readCSV(filePath);
+  } catch (error) {
+    console.error(`Gagal membaca ${path.basename(filePath)}:`, error.message);
+
+    return [];
+  }
+}
+
+// HELPER: MENGAMBIL DATA BERDASARKAN LOCATION ID
+
+function findByLocation(rows, locationId) {
+  return rows.find((row) => Number(row.location_id) === Number(locationId));
+}
+
+// HELPER: MENJALANKAN PYTHON
+
 function runPythonScript(filename) {
   return new Promise((resolve, reject) => {
     const scriptPath = path.join(ML_DIR, "prediction", filename);
 
-    const python = spawn("python", [scriptPath], {
+    if (!fs.existsSync(scriptPath)) {
+      reject(new Error(`Script Python tidak ditemukan: ${scriptPath}`));
+      return;
+    }
+
+    const pythonCommand = process.platform === "win32" ? "python" : "python3";
+
+    const python = spawn(pythonCommand, [scriptPath], {
       cwd: ML_DIR,
       shell: false,
     });
+
+    let settled = false;
 
     python.stdout.on("data", (data) => {
       process.stdout.write(`[${filename}] ${data}`);
@@ -86,26 +183,23 @@ function runPythonScript(filename) {
     });
 
     python.on("error", (error) => {
-      console.error(error);
+      if (settled) return;
 
-      reject(error);
+      settled = true;
+
+      reject(new Error(`${filename} gagal dijalankan: ${error.message}`));
     });
 
     python.on("close", (code) => {
-      if (code === 0) {
-        // console.log("");
-        // console.log(`${filename} selesai dijalankan.`);
+      if (settled) return;
 
+      settled = true;
+
+      if (code === 0) {
+        console.log(`[${filename}] Selesai.`);
         resolve();
       } else {
-        const error = new Error(
-          `${filename} gagal dijalankan dengan exit code ${code}.`,
-        );
-
-        console.error("");
-        console.error(`${error.message}`);
-
-        reject(error);
+        reject(new Error(`${filename} gagal dengan exit code ${code}.`));
       }
     });
   });
@@ -114,334 +208,368 @@ function runPythonScript(filename) {
 // ML PIPELINE
 
 async function runMLPipeline() {
+  console.log("\n====================================");
+  console.log("Memulai pipeline realtime Noxora");
+  console.log("====================================\n");
+
   try {
     await runPythonScript("fetch_hourly_api.py");
     await runPythonScript("fetch_realtime_api.py");
     await runPythonScript("predict_realtime_svr.py");
     await runPythonScript("predict_realtime_xgboost.py");
 
+    lastMLSuccessAt = new Date().toISOString();
+    lastMLError = null;
+
+    console.log("Pipeline realtime berhasil.");
     return true;
   } catch (error) {
-    console.error(error.message);
+    lastMLError = error.message;
+
+    console.error("Pipeline realtime gagal:", error.message);
 
     return false;
   }
 }
 
-let lastMLRunHour = null;
-let isMLRunning = false;
-
-function getCurrentHourKey() {
-  const now = new Date();
-
-  return new Intl.DateTimeFormat("sv-SE", {
-    timeZone: "Asia/Jakarta",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-  })
-    .format(now)
-    .replace(" ", "T");
-}
+// REFRESH PIPELINE MAKSIMAL SETIAP 5 MENIT
 
 async function ensureMLPipeline() {
-  const currentHour = getCurrentHourKey();
-
-  if (lastMLRunHour === currentHour) {
+  // Jika proses sedang berjalan, tunggu proses yang sama.
+  if (mlPipelinePromise) {
+    await mlPipelinePromise;
     return;
   }
 
-  if (isMLRunning) {
-    while (isMLRunning) {
-      await new Promise((resolve) => setTimeout(resolve, 500));
-    }
+  const now = Date.now();
 
+  // Hindari pemanggilan API berulang.
+  if (now - lastMLAttemptAt < REFRESH_INTERVAL) {
     return;
   }
 
-  isMLRunning = true;
+  // Catat percobaan sebelum menjalankan pipeline.
+  lastMLAttemptAt = now;
+
+  mlPipelinePromise = runMLPipeline();
 
   try {
-    const success = await runMLPipeline();
-
-    if (success) {
-      lastMLRunHour = currentHour;
-    }
+    await mlPipelinePromise;
   } finally {
-    isMLRunning = false;
+    mlPipelinePromise = null;
   }
 }
 
-// MEMBACA FILE CSV
-function readCSV(filePath) {
-  if (!fs.existsSync(filePath)) {
-    throw new Error(`File CSV tidak ditemukan: ${filePath}`);
-  }
+// HELPER: MENGGABUNGKAN DATA AKTUAL DAN PREDIKSI
 
-  const csv = fs.readFileSync(filePath, "utf8");
+function buildRealtimeData() {
+  const actualRows = readCSVIfExists(REALTIME_CSV);
+  const svrRows = readCSVIfExists(SVR_PREDICTION_CSV);
+  const xgbRows = readCSVIfExists(XGBOOST_PREDICTION_CSV);
 
-  const lines = csv
-    .trim()
-    .split(/\r?\n/)
-    .filter((line) => line.trim() !== "");
+  return actualRows.map((actual) => {
+    const locationId = Number(actual.location_id);
 
-  if (lines.length === 0) {
-    return [];
-  }
+    const svr = findByLocation(svrRows, locationId);
+    const xgb = findByLocation(xgbRows, locationId);
 
-  const headers = lines[0].split(",").map((header) => header.trim());
-  const data = lines.slice(1).map((line) => {
-    const values = line.split(",").map((value) => value.trim());
-    const row = {};
-    headers.forEach((header, index) => {
-      row[header] = values[index];
-    });
+    return {
+      // Identitas lokasi
+      location_id: locationId,
+      location_name:
+        actual.location_name ||
+        svr?.location_name ||
+        xgb?.location_name ||
+        null,
 
-    return row;
+      // Data NO2 aktual
+      time_no2: actual.time_no2 || null,
+      nitrogen_dioxide: toNumber(actual.nitrogen_dioxide),
+
+      // Data meteorologi aktual
+      time_weather: actual.time_weather || null,
+      temperature_2m: toNumber(actual.temperature_2m),
+      relative_humidity_2m: toNumber(actual.relative_humidity_2m),
+      rain: toNumber(actual.rain),
+      wind_speed_10m: toNumber(actual.wind_speed_10m),
+
+      // Waktu prediksi
+      fetched_at: svr?.fetched_at || xgb?.fetched_at || null,
+      target_time: svr?.target_time || xgb?.target_time || null,
+      weather_time: svr?.weather_time || xgb?.weather_time || null,
+
+      // Lag untuk grafik dan fitur model
+      LAG1: toNumber(svr?.LAG1 ?? actual.LAG1),
+      LAG2: toNumber(svr?.LAG2 ?? actual.LAG2),
+      LAG3: toNumber(svr?.LAG3 ?? actual.LAG3),
+
+      // Prediksi SVR
+      predicted_nitrogen_dioxide: toNumber(svr?.predicted_nitrogen_dioxide),
+
+      // Prediksi XGBoost
+      predicted_nitrogen_dioxide_xgboost: toNumber(
+        xgb?.predicted_nitrogen_dioxide,
+      ),
+    };
   });
-
-  return data;
 }
 
-// REALTIME ALL
+// TEST BACKEND
+
+app.get("/", (req, res) => {
+  res.json({
+    success: true,
+    message: "Backend Noxora berhasil berjalan!",
+  });
+});
+
+// TEST DATABASE
+
+app.get("/test-db", async (req, res) => {
+  try {
+    const result = await pool.query("SELECT NOW()");
+
+    res.json({
+      success: true,
+      message: "Database berhasil terhubung!",
+      time: result.rows[0],
+    });
+  } catch (error) {
+    console.error("Database error:", error);
+
+    res.status(500).json({
+      success: false,
+      message: "Database gagal terhubung.",
+      error: error.message,
+    });
+  }
+});
+
+// STATUS PIPELINE
+
+app.get("/api/ml/status", (req, res) => {
+  res.json({
+    success: true,
+    refresh_interval_ms: REFRESH_INTERVAL,
+    last_attempt_at: lastMLAttemptAt
+      ? new Date(lastMLAttemptAt).toISOString()
+      : null,
+    last_success_at: lastMLSuccessAt,
+    last_error: lastMLError,
+    is_running: Boolean(mlPipelinePromise),
+    has_realtime_file: fs.existsSync(REALTIME_CSV),
+    has_svr_file: fs.existsSync(SVR_PREDICTION_CSV),
+    has_xgboost_file: fs.existsSync(XGBOOST_PREDICTION_CSV),
+  });
+});
+
+// REALTIME SEMUA LOKASI
+// Mengembalikan data aktual dan LAG
+
 app.get("/api/realtime-all", async (req, res) => {
   try {
     await ensureMLPipeline();
 
     if (!fs.existsSync(REALTIME_CSV)) {
-      return res.status(404).json({
+      return res.status(503).json({
+        success: false,
         message: "Data realtime belum tersedia.",
+        error: lastMLError,
       });
     }
 
-    if (!fs.existsSync(SVR_PREDICTION_CSV)) {
-      return res.status(404).json({
-        message: "Data prediksi SVR belum tersedia.",
-      });
-    }
+    const data = buildRealtimeData();
 
-    const data = readCSV(REALTIME_CSV);
-    const svrData = readCSV(SVR_PREDICTION_CSV);
-
-    const result = data.map((item) => {
-      const prediction = svrData.find(
-        (svr) => Number(svr.location_id) === Number(item.location_id),
-      );
-
-      return {
-        ...item,
-        LAG2: prediction?.LAG2 ?? null,
-      };
-    });
-
-    return res.json(result);
+    return res.json(data);
   } catch (error) {
-    console.error("Gagal membaca data realtime:", error);
+    console.error("Gagal membaca data realtime:", error.message);
 
     return res.status(500).json({
+      success: false,
       message: "Gagal membaca data realtime.",
       error: error.message,
     });
   }
 });
 
-// REALTIME BERDASARKAN LOCATION
+// REALTIME + PREDIKSI SEMUA LOKASI
+// Endpoint yang digunakan frontend Home
+
+app.get("/api/ml/realtime", (req, res) => {
+  try {
+    // Baca data aktual yang terakhir berhasil disimpan.
+    const actualRows = readCSVIfExists(REALTIME_CSV);
+
+    if (actualRows.length === 0) {
+      return res.status(503).json({
+        success: false,
+        message: "Data realtime belum tersedia.",
+        error: lastMLError,
+      });
+    }
+
+    // File prediksi boleh belum tersedia.
+    const svrRows = readCSVIfExists(SVR_PREDICTION_CSV);
+    const xgbRows = readCSVIfExists(XGBOOST_PREDICTION_CSV);
+
+    const data = actualRows.map((actual) => {
+      const locationId = String(actual.location_id);
+
+      const svr = svrRows.find((row) => String(row.location_id) === locationId);
+
+      const xgb = xgbRows.find((row) => String(row.location_id) === locationId);
+
+      return {
+        ...actual,
+
+        target_time: svr?.target_time ?? xgb?.target_time ?? null,
+
+        LAG1: svr?.LAG1 ?? actual.LAG1 ?? null,
+        LAG2: svr?.LAG2 ?? actual.LAG2 ?? null,
+        LAG3: svr?.LAG3 ?? actual.LAG3 ?? null,
+
+        temperature_2m: svr?.temperature_2m ?? actual.temperature_2m ?? null,
+
+        relative_humidity_2m:
+          svr?.relative_humidity_2m ?? actual.relative_humidity_2m ?? null,
+
+        rain: svr?.rain ?? actual.rain ?? null,
+
+        wind_speed_10m: svr?.wind_speed_10m ?? actual.wind_speed_10m ?? null,
+
+        predicted_nitrogen_dioxide: svr?.predicted_nitrogen_dioxide ?? null,
+
+        predicted_nitrogen_dioxide_xgboost:
+          xgb?.predicted_nitrogen_dioxide_xgboost ??
+          xgb?.predicted_nitrogen_dioxide ??
+          null,
+      };
+    });
+
+    return res.json({
+      success: true,
+      data,
+      last_success_at: lastMLSuccessAt,
+      last_error: lastMLError,
+    });
+  } catch (error) {
+    console.error("Gagal mengambil data realtime gabungan:", error.message);
+
+    return res.status(500).json({
+      success: false,
+      message: "Gagal mengambil data realtime.",
+      error: error.message,
+    });
+  }
+});
+
 app.get("/api/realtime", async (req, res) => {
   try {
     const locationId = Number(req.query.location_id);
     const predict = req.query.predict === "true";
 
-    // VALIDASI LOCATION ID
-    if (!locationId) {
+    if (!Number.isInteger(locationId) || locationId < 1 || locationId > 10) {
       return res.status(400).json({
-        message: "location_id wajib diisi.",
+        success: false,
+        message: "location_id harus berupa angka 1 sampai 10.",
       });
     }
 
     await ensureMLPipeline();
 
-    // JIKA MEMINTA DATA PREDIKSI
     if (predict) {
-      // CEK FILE SVR
+      const data = buildRealtimeData();
 
-      if (!fs.existsSync(SVR_PREDICTION_CSV)) {
+      const result = findByLocation(data, locationId);
+
+      if (!result) {
         return res.status(404).json({
-          message: "Data prediksi SVR belum tersedia.",
+          success: false,
+          message: "Data lokasi tidak ditemukan.",
         });
       }
-
-      // CEK FILE XGBOOST
-      if (!fs.existsSync(XGBOOST_PREDICTION_CSV)) {
-        return res.status(404).json({
-          message: "Data prediksi XGBoost belum tersedia.",
-        });
-      }
-
-      const svrData = readCSV(SVR_PREDICTION_CSV);
-      const xgboostData = readCSV(XGBOOST_PREDICTION_CSV);
-
-      const svrResult = svrData.find(
-        (item) => Number(item.location_id) === locationId,
-      );
-
-      const xgboostResult = xgboostData.find(
-        (item) => Number(item.location_id) === locationId,
-      );
-
-      // CEK DATA SVR
-      if (!svrResult) {
-        return res.status(404).json({
-          message: "Data prediksi SVR untuk lokasi tidak ditemukan.",
-        });
-      }
-
-      // CEK DATA XGBOOST
-      if (!xgboostResult) {
-        return res.status(404).json({
-          message: "Data prediksi XGBoost untuk lokasi tidak ditemukan.",
-        });
-      }
-
-      // GABUNGKAN HASIL
-      const result = {
-        // Informasi lokasi
-        location_id: locationId,
-        location_name: svrResult.location_name || xgboostResult.location_name,
-
-        // Waktu prediksi
-        fetched_at: svrResult.fetched_at || xgboostResult.fetched_at,
-        target_time: svrResult.target_time || xgboostResult.target_time,
-        weather_time: svrResult.weather_time || xgboostResult.weather_time,
-
-        // DATA LAG
-        LAG1: svrResult.LAG1,
-        LAG2: svrResult.LAG2,
-        LAG3: svrResult.LAG3,
-
-        // DATA METEOROLOGI
-        temperature_2m: svrResult.temperature_2m,
-        relative_humidity_2m: svrResult.relative_humidity_2m,
-        rain: svrResult.rain,
-        wind_speed_10m: svrResult.wind_speed_10m,
-
-        // HASIL PREDIKSI SVR
-        predicted_nitrogen_dioxide: Number(
-          svrResult.predicted_nitrogen_dioxide,
-        ),
-
-        // HASIL PREDIKSI XGBOOST
-        predicted_nitrogen_dioxide_xgboost: Number(
-          xgboostResult.predicted_nitrogen_dioxide,
-        ),
-      };
 
       return res.json(result);
     }
 
-    // JIKA HANYA MEMINTA DATA REALTIME
     if (!fs.existsSync(REALTIME_CSV)) {
-      return res.status(404).json({
+      return res.status(503).json({
+        success: false,
         message: "Data realtime belum tersedia.",
+        error: lastMLError,
       });
     }
 
-    const data = readCSV(REALTIME_CSV);
-
-    const result = data.find((item) => Number(item.location_id) === locationId);
+    const actualRows = readCSV(REALTIME_CSV);
+    const result = findByLocation(actualRows, locationId);
 
     if (!result) {
       return res.status(404).json({
+        success: false,
         message: "Data realtime untuk lokasi tidak ditemukan.",
       });
     }
 
     return res.json(result);
   } catch (error) {
-    console.error("Gagal mengambil data realtime/prediksi:", error);
+    console.error("Gagal mengambil data realtime/prediksi:", error.message);
 
     return res.status(500).json({
+      success: false,
       message: "Gagal mengambil data realtime/prediksi.",
       error: error.message,
     });
   }
 });
 
-// PREDICTIONS
+// PREDICTIONS SEMUA LOKASI
+// Mempertahankan endpoint lama
+
 app.get("/api/predictions", async (req, res) => {
   try {
     await ensureMLPipeline();
 
-    // CEK SVR
-    if (!fs.existsSync(SVR_PREDICTION_CSV)) {
-      return res.status(404).json({
-        message: "Data prediksi SVR belum tersedia.",
+    const data = buildRealtimeData();
+
+    if (data.length === 0) {
+      return res.status(503).json({
+        success: false,
+        message: "Data prediksi belum tersedia.",
+        error: lastMLError,
       });
     }
 
-    // CEK XGBOOST
-    if (!fs.existsSync(XGBOOST_PREDICTION_CSV)) {
-      return res.status(404).json({
-        message: "Data prediksi XGBoost belum tersedia.",
-      });
-    }
-
-    // BACA DATA
-    const svrData = readCSV(SVR_PREDICTION_CSV);
-    const xgboostData = readCSV(XGBOOST_PREDICTION_CSV);
-
-    // GABUNGKAN DATA
-    const result = svrData.map((svr) => {
-      const xgboost = xgboostData.find(
-        (item) => Number(item.location_id) === Number(svr.location_id),
-      );
-
-      return {
-        location_id: Number(svr.location_id),
-        location_name: svr.location_name || xgboost?.location_name,
-        fetched_at: svr.fetched_at || xgboost?.fetched_at,
-        target_time: svr.target_time || xgboost?.target_time,
-        weather_time: svr.weather_time || xgboost?.weather_time,
-        LAG1: svr.LAG1,
-        LAG2: svr.LAG2,
-        LAG3: svr.LAG3,
-        temperature_2m: svr.temperature_2m,
-        relative_humidity_2m: svr.relative_humidity_2m,
-        rain: svr.rain,
-        wind_speed_10m: svr.wind_speed_10m,
-        // SVR
-        predicted_nitrogen_dioxide: Number(svr.predicted_nitrogen_dioxide),
-        // XGBoost
-        predicted_nitrogen_dioxide_xgboost: xgboost
-          ? Number(xgboost.predicted_nitrogen_dioxide)
-          : null,
-      };
-    });
-
-    return res.json(result);
+    // Format array dipertahankan untuk kompatibilitas
+    // dengan frontend yang menggunakan endpoint lama.
+    return res.json(data);
   } catch (error) {
-    console.error("Gagal membaca data prediksi:", error);
+    console.error("Gagal membaca data prediksi:", error.message);
 
     return res.status(500).json({
+      success: false,
       message: "Gagal membaca data prediksi.",
       error: error.message,
     });
   }
 });
 
-// ROUTES
+// ROUTES AUTENTIKASI, PROFIL, DAN PASSWORD
+
 app.use("/", authRoutes);
 app.use("/", profileRoutes);
 app.use("/", passwordRoutes);
 
 // START SERVER
-app.listen(PORT, async () => {
-  console.log(`Backend berjalan di http://localhost:${PORT}`);
+// app.listen(PORT, () => {
+//   console.log(`Backend berjalan di http://localhost:${PORT}`);
 
-  const currentHour = getCurrentHourKey();
-  const success = await runMLPipeline();
+//   // Percobaan pertama dilakukan saat server mulai.
+//   // ensureMLPipeline membatasi percobaan berikutnya
+//   // berdasarkan interval refresh.
+//   ensureMLPipeline().catch((error) => {
+//     console.error("Gagal menjalankan pipeline saat startup:", error.message);
+//   });
+// });
 
-  if (success) {
-    lastMLRunHour = currentHour;
-  }
-});
+// EXPORT APLIKASI
+export default app;

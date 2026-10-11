@@ -62,7 +62,7 @@ export default function Home() {
     setSelectedLocation(String(locationId));
   };
 
-  const handleSendPrediction = async () => {
+  const handleSendPrediction = () => {
     const isLoggedIn = localStorage.getItem("isLoggedIn");
 
     if (isLoggedIn !== "true") {
@@ -79,24 +79,16 @@ export default function Home() {
       setLoading(true);
       setError("");
 
-      const API_URL = process.env.NEXT_PUBLIC_API_URL;
-
-      const response = await fetch(`${API_URL}/api/ml/realtime`);
-
-      const result = await response.json();
-
-      console.log("HASIL PREDIKSI DARI BACKEND:", result);
-
-      if (!response.ok || !result.success) {
-        throw new Error(result.message || "Gagal mengambil data prediksi.");
-      }
-
-      const selectedData = result.data?.find(
+      // Gunakan data yang sudah dimuat oleh useEffect.
+      // Tidak memanggil Open-Meteo lagi ketika tombol Send ditekan.
+      const selectedData = allLocations.find(
         (row) => String(row.location_id) === String(selectedPredictionLocation),
       );
 
       if (!selectedData) {
-        throw new Error("Data lokasi yang dipilih tidak tersedia.");
+        throw new Error(
+          "Data lokasi belum tersedia. Tunggu data realtime selesai dimuat.",
+        );
       }
 
       const predictedSVR = Number(selectedData.predicted_nitrogen_dioxide);
@@ -107,41 +99,51 @@ export default function Home() {
 
       if (
         selectedData.predicted_nitrogen_dioxide == null ||
-        Number.isNaN(predictedSVR)
+        !Number.isFinite(predictedSVR)
       ) {
         throw new Error("Data prediksi SVR tidak tersedia.");
       }
 
       if (
         selectedData.predicted_nitrogen_dioxide_xgboost == null ||
-        Number.isNaN(predictedXGBoost)
+        !Number.isFinite(predictedXGBoost)
       ) {
         throw new Error("Data prediksi XGBoost tidak tersedia.");
       }
 
+      const lagValues = [
+        selectedData.LAG3,
+        selectedData.LAG2,
+        selectedData.LAG1,
+      ].map(Number);
+
+      if (!lagValues.every(Number.isFinite)) {
+        throw new Error("Data historis NO₂ (LAG1–LAG3) tidak lengkap.");
+      }
+
+      // Target waktu prediksi dari endpoint Python.
       const targetTimeValue = String(selectedData.target_time || "");
 
-      const targetTime = targetTimeValue.includes("T")
-        ? targetTimeValue.split("T")[1]?.slice(0, 5)
-        : targetTimeValue.split(" ")[1]?.slice(0, 5);
+      const targetTimeMatch = targetTimeValue.match(
+        /T(\d{2}:\d{2})| (\d{2}:\d{2})/,
+      );
+
+      const targetTime = targetTimeMatch
+        ? targetTimeMatch[1] || targetTimeMatch[2]
+        : "";
 
       if (!targetTime) {
         throw new Error("Waktu prediksi tidak tersedia.");
       }
 
-      const svrChartSeries = [
-        Number(selectedData.LAG3),
-        Number(selectedData.LAG2),
-        Number(selectedData.LAG1),
-        predictedSVR,
-      ].map((value) => Number(value.toFixed(2)));
+      // Urutan grafik: LAG3, LAG2, LAG1, hasil prediksi.
+      const svrChartSeries = [...lagValues, predictedSVR].map((value) =>
+        Number(value.toFixed(2)),
+      );
 
-      const xgboostChartSeries = [
-        Number(selectedData.LAG3),
-        Number(selectedData.LAG2),
-        Number(selectedData.LAG1),
-        predictedXGBoost,
-      ].map((value) => Number(value.toFixed(2)));
+      const xgboostChartSeries = [...lagValues, predictedXGBoost].map((value) =>
+        Number(value.toFixed(2)),
+      );
 
       const [hour, minute] = targetTime.split(":").map(Number);
       const targetMinutes = hour * 60 + minute;
@@ -162,7 +164,6 @@ export default function Home() {
 
         svrValue: predictedSVR,
         xgboostValue: predictedXGBoost,
-
         time: targetTime,
 
         temperature_2m: selectedData.temperature_2m,
@@ -174,12 +175,10 @@ export default function Home() {
         xgboostChartSeries,
         chartCategories,
       });
-    } catch (error) {
-      console.error("Gagal mendapatkan prediksi:", error);
+    } catch (err) {
+      console.error("Gagal menampilkan prediksi:", err);
 
-      setError(error.message || "Terjadi kesalahan saat mengambil prediksi.");
-
-      setPredictionData(null);
+      setError(err.message || "Terjadi kesalahan saat menampilkan prediksi.");
     } finally {
       setLoading(false);
     }
@@ -200,43 +199,81 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    const load = async () => {
-      try {
-        const API_URL = process.env.NEXT_PUBLIC_API_URL;
-        const res = await fetch(`${API_URL}/api/ml/realtime`);
-        const result = await res.json().catch(() => null);
+    let cancelled = false;
+    let isLoading = false;
+    let controller = null;
 
-        if (!res.ok) {
+    const load = async () => {
+      // Hindari request yang bertumpuk.
+      if (isLoading || cancelled) return;
+
+      const API_URL = process.env.NEXT_PUBLIC_API_URL;
+
+      if (!API_URL) {
+        console.error("NEXT_PUBLIC_API_URL belum dikonfigurasi.");
+        return;
+      }
+
+      isLoading = true;
+      controller = new AbortController();
+
+      try {
+        const response = await fetch(`${API_URL}/api/ml/realtime`, {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+
+        const result = await response.json().catch(() => null);
+
+        if (!response.ok) {
           throw new Error(
             result?.message ||
               result?.error ||
-              `Gagal mengambil data realtime. HTTP ${res.status}`,
+              `Gagal mengambil data realtime. HTTP ${response.status}`,
           );
         }
 
-        if (!result.success || !Array.isArray(result.data)) {
+        if (!result?.success || !Array.isArray(result.data)) {
           throw new Error("Data realtime tidak tersedia.");
         }
 
+        if (cancelled) return;
+
+        // Simpan data terbaru hanya jika respons berhasil.
         setAllLocations(result.data);
 
         const selectedData = result.data.find(
           (row) => String(row.location_id) === String(selectedLocation),
         );
 
-        setCurrentLocationData(selectedData || null);
+        // Jika lokasi ditemukan, perbarui data lokasi aktif.
+        // Jika tidak ditemukan, pertahankan data sebelumnya.
+        if (selectedData) {
+          setCurrentLocationData(selectedData);
+        }
       } catch (err) {
-        console.error(err);
-        setCurrentLocationData(null);
-        setAllLocations([]);
+        if (cancelled || err.name === "AbortError") return;
+
+        console.error("Gagal memperbarui data realtime:", err);
+
+        // Jangan kosongkan allLocations atau currentLocationData.
+        // Data terakhir yang berhasil tetap ditampilkan.
+      } finally {
+        isLoading = false;
       }
     };
 
+    // Ambil data ketika halaman dibuka atau lokasi diganti.
     load();
 
+    // Perbarui data setiap 5 menit.
     const timer = setInterval(load, 5 * 60 * 1000);
 
-    return () => clearInterval(timer);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+      controller?.abort();
+    };
   }, [selectedLocation]);
 
   return (

@@ -1,18 +1,22 @@
 
 import json
 import os
-import time
+import logging
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
-from threading import Lock
 from zoneinfo import ZoneInfo
 
 import joblib
 import pandas as pd
-import psycopg2
 import requests
+import psycopg2
+from psycopg2.extras import Json, RealDictCursor
 
+
+# ============================================================
+# KONFIGURASI
+# ============================================================
 
 LATITUDES = [
     -6.199997,
@@ -49,17 +53,15 @@ WEATHER_URL = (
 )
 
 TIMEZONE = "Asia/Jakarta"
-CACHE_KEY = "python_realtime"
-CACHE_SECONDS = 1800
-STALE_CACHE_MAX_SECONDS = 86400
-REQUEST_TIMEOUT = 15
-MAX_RETRIES = 2
 
-_memory_cache = None
-_memory_cache_at = 0
-_prediction_lock = Lock()
 
-SVR_FEATURES = [
+# Cache diperbarui paling sering setiap 5 menit.
+CACHE_SECONDS = 5 * 60
+CACHE_KEY = "noxora_realtime_prediction"
+ADVISORY_LOCK_ID = 742001
+REQUEST_TIMEOUT = 20
+
+FEATURES_SVR = [
     "LAG1",
     "LAG2",
     "LAG3",
@@ -69,10 +71,20 @@ SVR_FEATURES = [
     "wind_speed_10m",
 ]
 
-XGBOOST_FEATURES = [
+# Nama file model XGBoost mengindikasikan model lag12.
+# Sesuaikan dengan fitur PERSIS yang digunakan saat training.
+FEATURES_XGBOOST = [
     "LAG1",
     "LAG2",
 ]
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+
+# ============================================================
+# PATH MODEL
+# ============================================================
 
 BASE_DIR = Path(__file__).resolve().parents[2]
 
@@ -93,8 +105,12 @@ XGBOOST_MODEL_PATH = (
 )
 
 
+# ============================================================
+# DATABASE NEON
+# ============================================================
+
 def get_database_connection():
-    database_url = os.environ.get("DATABASE_URL")
+    database_url = os.getenv("DATABASE_URL")
 
     if not database_url:
         raise RuntimeError(
@@ -103,179 +119,148 @@ def get_database_connection():
 
     return psycopg2.connect(
         database_url,
-        connect_timeout=5,
         sslmode="require",
+        connect_timeout=10,
     )
 
 
 def ensure_cache_table():
-    with get_database_connection() as connection:
+    connection = get_database_connection()
+
+    try:
+        with connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS
+                    realtime_prediction_cache (
+                        cache_key VARCHAR(100) PRIMARY KEY,
+                        payload JSONB NOT NULL,
+                        updated_at TIMESTAMPTZ NOT NULL
+                            DEFAULT NOW()
+                    )
+                    """
+                )
+    finally:
+        connection.close()
+
+
+def load_cache(connection):
+    with connection.cursor(
+        cursor_factory=RealDictCursor
+    ) as cursor:
+        cursor.execute(
+            """
+            SELECT payload, updated_at
+            FROM realtime_prediction_cache
+            WHERE cache_key = %s
+            """,
+            (CACHE_KEY,),
+        )
+
+        row = cursor.fetchone()
+
+    if not row:
+        return None, None
+
+    payload = row["payload"]
+
+    if isinstance(payload, str):
+        payload = json.loads(payload)
+
+    updated_at = row["updated_at"]
+
+    return payload, updated_at
+
+
+def save_cache(connection, payload):
+    # Fungsi ini hanya dipanggil setelah prediksi berhasil.
+    with connection:
         with connection.cursor() as cursor:
             cursor.execute(
                 """
-                CREATE TABLE IF NOT EXISTS realtime_prediction_cache (
-                    cache_key VARCHAR(50) PRIMARY KEY,
-                    payload JSONB NOT NULL,
-                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                INSERT INTO realtime_prediction_cache (
+                    cache_key,
+                    payload,
+                    updated_at
                 )
-                """
+                VALUES (%s, %s, NOW())
+                ON CONFLICT (cache_key)
+                DO UPDATE SET
+                    payload = EXCLUDED.payload,
+                    updated_at = NOW()
+                """,
+                (
+                    CACHE_KEY,
+                    Json(payload),
+                ),
             )
 
 
-def save_persistent_cache(payload):
-    try:
-        ensure_cache_table()
-
-        with get_database_connection() as connection:
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    """
-                    INSERT INTO realtime_prediction_cache
-                        (cache_key, payload, updated_at)
-                    VALUES (%s, %s::jsonb, NOW())
-                    ON CONFLICT (cache_key)
-                    DO UPDATE SET
-                        payload = EXCLUDED.payload,
-                        updated_at = NOW()
-                    """,
-                    (
-                        CACHE_KEY,
-                        json.dumps(payload, allow_nan=False),
-                    ),
-                )
-
-        return True
-
-    except Exception as error:
-        print(f"Gagal menyimpan cache PostgreSQL: {error}")
+def is_cache_fresh(updated_at):
+    if updated_at is None:
         return False
 
-
-def load_persistent_cache():
-    try:
-        with get_database_connection() as connection:
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    """
-                    SELECT payload, updated_at
-                    FROM realtime_prediction_cache
-                    WHERE cache_key = %s
-                    """,
-                    (CACHE_KEY,),
-                )
-
-                row = cursor.fetchone()
-
-        if not row:
-            return None, None
-
-        payload, updated_at = row
-
-        if isinstance(payload, str):
-            payload = json.loads(payload)
-
-        return payload, updated_at
-
-    except Exception as error:
-        print(f"Gagal membaca cache PostgreSQL: {error}")
-        return None, None
-
-
-def cache_age_seconds(updated_at):
-    if updated_at is None:
-        return None
+    now = datetime.now(timezone.utc)
 
     if updated_at.tzinfo is None:
-        updated_at = updated_at.replace(tzinfo=timezone.utc)
+        updated_at = updated_at.replace(
+            tzinfo=timezone.utc
+        )
 
-    return max(
-        0,
-        (
-            datetime.now(timezone.utc) - updated_at
-        ).total_seconds(),
-    )
+    age = (now - updated_at).total_seconds()
+
+    return age < CACHE_SECONDS
 
 
-def is_cache_usable(updated_at):
-    age = cache_age_seconds(updated_at)
-
-    return (
-        age is not None
-        and age <= STALE_CACHE_MAX_SECONDS
-    )
-
-def add_cache_metadata(payload, updated_at=None, stale=False):
+def add_cache_metadata(payload, updated_at):
     result = dict(payload)
-    result["cached"] = True
+
+    now = datetime.now(timezone.utc)
 
     if updated_at is not None:
-        if updated_at.tzinfo is not None:
-            result["cache_updated_at"] = (
-                updated_at.astimezone(timezone.utc).isoformat()
+        if updated_at.tzinfo is None:
+            updated_at = updated_at.replace(
+                tzinfo=timezone.utc
             )
-        else:
-            result["cache_updated_at"] = updated_at.isoformat()
 
-    if stale:
-        result["cache_warning"] = (
-            "Open-Meteo gagal diakses. Data yang ditampilkan "
-            "berasal dari prediksi terakhir yang berhasil disimpan "
-            "dan mungkin bukan data terbaru."
+        age_seconds = max(
+            0,
+            int((now - updated_at).total_seconds()),
         )
+
+        result["cache"] = {
+            "cached": True,
+            "updated_at": updated_at.isoformat(),
+            "age_seconds": age_seconds,
+            "stale": age_seconds >= CACHE_SECONDS,
+        }
+    else:
+        result["cache"] = {
+            "cached": False,
+            "updated_at": None,
+            "age_seconds": None,
+            "stale": False,
+        }
 
     return result
 
 
+# ============================================================
+# OPEN-METEO
+# ============================================================
+
 def fetch_api(url, params):
-    last_error = None
-
-    for attempt in range(MAX_RETRIES):
-        try:
-            response = requests.get(
-                url,
-                params=params,
-                timeout=REQUEST_TIMEOUT,
-            )
-
-            # Jangan mengulang request 429 secara langsung.
-            if response.status_code == 429:
-                retry_after = response.headers.get("Retry-After")
-
-                raise requests.HTTPError(
-                    "Open-Meteo membatasi permintaan (HTTP 429). "
-                    f"Retry-After: {retry_after or 'tidak tersedia'}",
-                    response=response,
-                )
-
-            response.raise_for_status()
-            return response.json()
-
-        except requests.HTTPError as error:
-            last_error = error
-
-            status = (
-                error.response.status_code
-                if error.response is not None
-                else None
-            )
-
-            # Error 429 ditangani dengan cache, bukan retry langsung.
-            if status == 429:
-                raise
-
-            # Error 4xx lainnya tidak perlu diulang.
-            if status is not None and 400 <= status < 500:
-                raise
-
-        except requests.RequestException as error:
-            last_error = error
-
-        if attempt < MAX_RETRIES - 1:
-            time.sleep(2)
-
-    raise last_error or RuntimeError(
-        "Permintaan Open-Meteo gagal."
+    response = requests.get(
+        url,
+        params=params,
+        timeout=REQUEST_TIMEOUT,
     )
+
+    response.raise_for_status()
+
+    return response.json()
+
 
 def fetch_no2():
     params = {
@@ -294,7 +279,7 @@ def fetch_no2():
 
     if len(data) != len(LATITUDES):
         raise ValueError(
-            "Jumlah respons data NO2 tidak sesuai dengan jumlah lokasi."
+            "Jumlah lokasi data NO2 tidak sesuai."
         )
 
     rows = []
@@ -304,14 +289,17 @@ def fetch_no2():
         times = hourly.get("time", [])
         values = hourly.get("nitrogen_dioxide", [])
 
-        for time_value, value in zip(times, values):
-            rows.append(
-                {
-                    "location_id": location_id,
-                    "time": pd.to_datetime(time_value),
-                    "nitrogen_dioxide": value,
-                }
+        if len(times) != len(values):
+            raise ValueError(
+                f"Panjang data NO2 lokasi {location_id} tidak sesuai."
             )
+
+        for time_value, value in zip(times, values):
+            rows.append({
+                "location_id": location_id,
+                "time": pd.to_datetime(time_value),
+                "nitrogen_dioxide": value,
+            })
 
     df = pd.DataFrame(rows)
 
@@ -344,7 +332,7 @@ def fetch_weather():
 
     if len(data) != len(LATITUDES):
         raise ValueError(
-            "Jumlah respons meteorologi tidak sesuai dengan jumlah lokasi."
+            "Jumlah lokasi data meteorologi tidak sesuai."
         )
 
     rows = []
@@ -358,39 +346,43 @@ def fetch_weather():
         rain = hourly.get("rain", [])
         wind_speed = hourly.get("wind_speed_10m", [])
 
-        lengths = [
+        lengths = {
             len(times),
             len(temperature),
             len(humidity),
             len(rain),
             len(wind_speed),
-        ]
+        }
 
-        if len(set(lengths)) != 1:
+        if len(lengths) != 1:
             raise ValueError(
-                f"Panjang data meteorologi lokasi {location_id} "
-                "tidak konsisten."
+                "Panjang data meteorologi lokasi "
+                f"{location_id} tidak sesuai."
             )
 
-        for index, time_value in enumerate(times):
-            rows.append(
-                {
-                    "location_id": location_id,
-                    "time": pd.to_datetime(time_value),
-                    "temperature_2m": temperature[index],
-                    "relative_humidity_2m": humidity[index],
-                    "rain": rain[index],
-                    "wind_speed_10m": wind_speed[index],
-                }
-            )
+        for i, time_value in enumerate(times):
+            rows.append({
+                "location_id": location_id,
+                "time": pd.to_datetime(time_value),
+                "temperature_2m": temperature[i],
+                "relative_humidity_2m": humidity[i],
+                "rain": rain[i],
+                "wind_speed_10m": wind_speed[i],
+            })
 
     df = pd.DataFrame(rows)
 
     if df.empty:
-        raise ValueError("Data meteorologi dari Open-Meteo kosong.")
+        raise ValueError(
+            "Data meteorologi dari Open-Meteo kosong."
+        )
 
     return df
 
+
+# ============================================================
+# WAKTU TARGET DAN PERSIAPAN FITUR
+# ============================================================
 
 def get_target_time():
     now = datetime.now(ZoneInfo(TIMEZONE))
@@ -404,10 +396,16 @@ def get_target_time():
         + timedelta(hours=1)
     )
 
-    return pd.Timestamp(target.replace(tzinfo=None))
+    return pd.Timestamp(
+        target.replace(tzinfo=None)
+    )
 
 
-def prepare_prediction_data(df_no2, df_weather, target_time):
+def prepare_prediction_data(
+    df_no2,
+    df_weather,
+    target_time,
+):
     df = pd.merge(
         df_no2,
         df_weather,
@@ -421,86 +419,87 @@ def prepare_prediction_data(df_no2, df_weather, target_time):
 
     rows = []
 
+    lag1_time = target_time - pd.Timedelta(hours=1)
+    lag2_time = target_time - pd.Timedelta(hours=2)
+    lag3_time = target_time - pd.Timedelta(hours=3)
+
+    weather_time = target_time - pd.Timedelta(hours=1)
+
     for location_id in range(1, len(LATITUDES) + 1):
         location_data = df[
             df["location_id"] == location_id
-        ].sort_values("time")
-
-        lag_times = [
-            target_time - pd.Timedelta(hours=1),
-            target_time - pd.Timedelta(hours=2),
-            target_time - pd.Timedelta(hours=3),
         ]
 
-        lag_values = []
-
-        for lag_time in lag_times:
-            previous = location_data[
-                location_data["time"] == lag_time
+        def get_value(time_value, column):
+            matched = location_data[
+                location_data["time"] == time_value
             ]
 
-            if previous.empty:
+            if matched.empty:
                 raise ValueError(
-                    f"Data NO2 lokasi {location_id} pada "
-                    f"{lag_time} tidak tersedia."
+                    f"Data {column} lokasi {location_id} "
+                    f"pada {time_value} tidak tersedia."
                 )
 
-            value = previous.iloc[0]["nitrogen_dioxide"]
+            value = matched.iloc[0][column]
 
             if pd.isna(value):
                 raise ValueError(
-                    f"Data NO2 lokasi {location_id} pada "
-                    f"{lag_time} kosong."
+                    f"Data {column} lokasi {location_id} "
+                    f"pada {time_value} kosong."
                 )
 
-            lag_values.append(float(value))
+            return float(value)
 
-        weather_time = target_time - pd.Timedelta(hours=1)
-
-        target_weather = location_data[
-            location_data["time"] == weather_time
-        ]
-
-        if target_weather.empty:
-            raise ValueError(
-                f"Data meteorologi lokasi {location_id} pada "
-                f"{weather_time} tidak tersedia."
-            )
-
-        weather = target_weather.iloc[0]
-
-        weather_values = [
-            weather["temperature_2m"],
-            weather["relative_humidity_2m"],
-            weather["rain"],
-            weather["wind_speed_10m"],
-        ]
-
-        if any(pd.isna(value) for value in weather_values):
-            raise ValueError(
-                f"Data meteorologi lokasi {location_id} "
-                "memiliki nilai kosong."
-            )
-
-        rows.append(
-            {
-                "location_id": location_id,
-                "target_time": target_time,
-                "weather_time": weather_time,
-                "LAG1": lag_values[0],
-                "LAG2": lag_values[1],
-                "LAG3": lag_values[2],
-                "temperature_2m": float(weather["temperature_2m"]),
-                "relative_humidity_2m": float(
-                    weather["relative_humidity_2m"]
-                ),
-                "rain": float(weather["rain"]),
-                "wind_speed_10m": float(weather["wind_speed_10m"]),
-            }
+        lag1 = get_value(
+            lag1_time,
+            "nitrogen_dioxide",
         )
+        lag2 = get_value(
+            lag2_time,
+            "nitrogen_dioxide",
+        )
+        lag3 = get_value(
+            lag3_time,
+            "nitrogen_dioxide",
+        )
+
+        temperature = get_value(
+            weather_time,
+            "temperature_2m",
+        )
+        humidity = get_value(
+            weather_time,
+            "relative_humidity_2m",
+        )
+        rain = get_value(
+            weather_time,
+            "rain",
+        )
+        wind_speed = get_value(
+            weather_time,
+            "wind_speed_10m",
+        )
+
+        rows.append({
+            "location_id": location_id,
+            "target_time": target_time,
+            "weather_time": weather_time,
+            "LAG1": lag1,
+            "LAG2": lag2,
+            "LAG3": lag3,
+            "temperature_2m": temperature,
+            "relative_humidity_2m": humidity,
+            "rain": rain,
+            "wind_speed_10m": wind_speed,
+        })
 
     return pd.DataFrame(rows)
 
+
+# ============================================================
+# MODEL
+# ============================================================
 
 def load_models():
     if not SVR_MODEL_PATH.exists():
@@ -510,25 +509,27 @@ def load_models():
 
     if not XGBOOST_MODEL_PATH.exists():
         raise FileNotFoundError(
-            f"Model XGBoost tidak ditemukan: {XGBOOST_MODEL_PATH}"
+            f"Model XGBoost tidak ditemukan: "
+            f"{XGBOOST_MODEL_PATH}"
         )
 
-    svr_model = joblib.load(SVR_MODEL_PATH)
-    xgboost_model = joblib.load(XGBOOST_MODEL_PATH)
-
-    return svr_model, xgboost_model
+    return (
+        joblib.load(SVR_MODEL_PATH),
+        joblib.load(XGBOOST_MODEL_PATH),
+    )
 
 
 def format_time(value):
     if pd.isna(value):
         return None
 
-    return pd.Timestamp(value).strftime("%Y-%m-%d %H:%M:%S")
+    return pd.Timestamp(value).strftime(
+        "%Y-%m-%d %H:%M:%S"
+    )
 
 
 def generate_prediction():
-    svr_model, xgboost_model = load_models()
-
+    # Ambil data terbaru hanya ketika cache perlu diperbarui.
     df_no2 = fetch_no2()
     df_weather = fetch_weather()
 
@@ -540,43 +541,43 @@ def generate_prediction():
         target_time,
     )
 
+    svr_model, xgboost_model = load_models()
+
     svr_predictions = svr_model.predict(
-        prediction_data[SVR_FEATURES]
+        prediction_data[FEATURES_SVR]
     )
 
     xgboost_predictions = xgboost_model.predict(
-        prediction_data[XGBOOST_FEATURES]
+        prediction_data[FEATURES_XGBOOST]
     )
 
     results = []
 
-    time_no2 = target_time - pd.Timedelta(hours=1)
-
-    for index, row in prediction_data.iterrows():
-        results.append(
-            {
-                "location_id": int(row["location_id"]),
-                "nitrogen_dioxide": float(row["LAG1"]),
-                "time_no2": format_time(time_no2),
-                "target_time": format_time(row["target_time"]),
-                "weather_time": format_time(row["weather_time"]),
-                "LAG1": float(row["LAG1"]),
-                "LAG2": float(row["LAG2"]),
-                "LAG3": float(row["LAG3"]),
-                "temperature_2m": float(row["temperature_2m"]),
-                "relative_humidity_2m": float(
-                    row["relative_humidity_2m"]
-                ),
-                "rain": float(row["rain"]),
-                "wind_speed_10m": float(row["wind_speed_10m"]),
-                "predicted_nitrogen_dioxide": float(
-                    svr_predictions[index]
-                ),
-                "predicted_nitrogen_dioxide_xgboost": float(
-                    xgboost_predictions[index]
-                ),
-            }
-        )
+    for i, row in prediction_data.iterrows():
+        results.append({
+            "location_id": int(row["location_id"]),
+            "nitrogen_dioxide": float(row["LAG1"]),
+            "time_no2": format_time(
+                target_time - pd.Timedelta(hours=1)
+            ),
+            "target_time": format_time(row["target_time"]),
+            "weather_time": format_time(row["weather_time"]),
+            "LAG1": float(row["LAG1"]),
+            "LAG2": float(row["LAG2"]),
+            "LAG3": float(row["LAG3"]),
+            "temperature_2m": float(row["temperature_2m"]),
+            "relative_humidity_2m": float(
+                row["relative_humidity_2m"]
+            ),
+            "rain": float(row["rain"]),
+            "wind_speed_10m": float(row["wind_speed_10m"]),
+            "predicted_nitrogen_dioxide": float(
+                svr_predictions[i]
+            ),
+            "predicted_nitrogen_dioxide_xgboost": float(
+                xgboost_predictions[i]
+            ),
+        })
 
     return {
         "success": True,
@@ -585,191 +586,158 @@ def generate_prediction():
     }
 
 
+# ============================================================
+# CACHE DAN REFRESH
+# ============================================================
 
 def get_cached_prediction():
-    global _memory_cache
-    global _memory_cache_at
+    ensure_cache_table()
 
-    connection = None
-    lock_acquired = False
-    last_payload = None
-    last_updated_at = None
-
-    # 1. Gunakan cache di memory jika tersedia.
-    if _memory_cache is not None:
-        age = time.time() - _memory_cache_at
-
-        if age < CACHE_SECONDS:
-            response = dict(_memory_cache)
-            response["cached"] = True
-            response["realtime_available"] = True
-            return response
+    connection = get_database_connection()
 
     try:
-        # 2. Baca cache terakhir dari PostgreSQL.
-        connection = get_database_connection()
+        cached_payload, updated_at = load_cache(connection)
 
-        with connection.cursor() as cursor:
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS realtime_prediction_cache (
-                    cache_key VARCHAR(50) PRIMARY KEY,
-                    payload JSONB NOT NULL,
-                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-                )
-            """)
+        # Selama cache belum berumur 30 menit,
+        # tidak ada request ke Open-Meteo atau model.
+        if cached_payload and is_cache_fresh(updated_at):
+            logger.info("Menggunakan cache realtime yang masih berlaku.")
+            return add_cache_metadata(
+                cached_payload,
+                updated_at,
+            )
 
-            cursor.execute("""
-                SELECT payload, updated_at
-                FROM realtime_prediction_cache
-                WHERE cache_key = %s
-            """, (CACHE_KEY,))
-
-            row = cursor.fetchone()
-
-        connection.commit()
-
-        if row:
-            last_payload, last_updated_at = row
-
-            if isinstance(last_payload, str):
-                last_payload = json.loads(last_payload)
-
-        # 3. Jika cache masih baru, langsung gunakan.
-        age = cache_age_seconds(last_updated_at)
-
-        print("CACHE STATUS:", {
-            "found": last_payload is not None,
-            "age_seconds": age,
-            "cache_seconds": CACHE_SECONDS
-        })
-
-        if (
-            last_payload is not None
-            and age is not None
-            and age < CACHE_SECONDS
-        ):
-            _memory_cache = last_payload
-            _memory_cache_at = time.time()
-
-            response = dict(last_payload)
-            response["cached"] = True
-            response["realtime_available"] = True
-            return response
-
-        # 4. Coba memperoleh lock agar tidak ada beberapa
-        # request yang memperbarui prediksi secara bersamaan.
+        # Hanya satu request yang boleh melakukan refresh.
         with connection.cursor() as cursor:
             cursor.execute(
                 "SELECT pg_try_advisory_lock(%s)",
-                (742001,)
+                (ADVISORY_LOCK_ID,),
             )
             lock_acquired = cursor.fetchone()[0]
 
-        # Jika request lain sedang memperbarui data,
-        # gunakan cache lama jika tersedia.
         if not lock_acquired:
-            if last_payload is not None:
+            # Request lain sedang memperbarui data.
+            # Kembalikan cache lama bila sudah tersedia.
+            if cached_payload:
+                logger.info(
+                    "Refresh sedang berjalan; menggunakan cache lama."
+                )
                 return add_cache_metadata(
-                    last_payload,
-                    last_updated_at,
-                    stale=True
+                    cached_payload,
+                    updated_at,
                 )
 
-            raise RuntimeError(
-                "Prediksi sedang diproses dan cache belum tersedia."
+            return {
+                "success": False,
+                "message": (
+                    "Data realtime sedang disiapkan. "
+                    "Silakan coba kembali sebentar lagi."
+                ),
+                "data": [],
+            }
+
+        try:
+            # Ambil data dan jalankan kedua model.
+            new_payload = generate_prediction()
+
+            # Jangan simpan respons gagal.
+            if not new_payload.get("success"):
+                raise RuntimeError(
+                    "Proses prediksi tidak menghasilkan data sukses."
+                )
+
+            # Simpan hanya setelah seluruh proses berhasil.
+            save_cache(connection, new_payload)
+
+            # Baca timestamp yang benar dari database.
+            _, saved_updated_at = load_cache(connection)
+
+            logger.info(
+                "Cache realtime berhasil diperbarui."
             )
 
-        # 5. Ambil data terbaru hanya ketika cache perlu diperbarui.
-        print("CACHE MISS: mengambil data terbaru dari Open-Meteo.")
-
-        result = generate_prediction()
-
-        # 6. Simpan hasil baru hanya jika prediksi berhasil.
-        with connection.cursor() as cursor:
-            cursor.execute("""
-                INSERT INTO realtime_prediction_cache
-                    (cache_key, payload, updated_at)
-                VALUES (%s, %s::jsonb, NOW())
-                ON CONFLICT (cache_key)
-                DO UPDATE SET
-                    payload = EXCLUDED.payload,
-                    updated_at = NOW()
-            """, (
-                CACHE_KEY,
-                json.dumps(result, allow_nan=False)
-            ))
-
-        connection.commit()
-
-        _memory_cache = result
-        _memory_cache_at = time.time()
-
-        response = dict(result)
-        response["cached"] = False
-        response["realtime_available"] = True
-        response["cache_warning"] = None
-
-        return response
-
-    except Exception as error:
-        print(f"Gagal mengambil data terbaru: {error}")
-
-        # 7. Jika API gagal, kembalikan prediksi terakhir.
-        if last_payload is not None:
-            print("CACHE FALLBACK: menggunakan prediksi terakhir.")
-
-            _memory_cache = last_payload
-            _memory_cache_at = time.time()
-
-            response = dict(last_payload)
-            response["cached"] = True
-            response["realtime_available"] = False
-            response["cache_warning"] = (
-                "Data realtime tidak tersedia. "
-                "Menampilkan prediksi terakhir yang tersimpan."
+            return add_cache_metadata(
+                new_payload,
+                saved_updated_at,
             )
 
-            return response
+        except Exception as error:
+            logger.exception(
+                "Refresh realtime gagal: %s",
+                error,
+            )
 
-        # Belum ada cache sama sekali.
-        raise
+            # Jangan menimpa cache sebelumnya dengan error.
+            if cached_payload:
+                result = add_cache_metadata(
+                    cached_payload,
+                    updated_at,
+                )
+                result["warning"] = (
+                    "Pembaruan data gagal. "
+                    "Data dan prediksi terakhir yang berhasil "
+                    "tetap ditampilkan."
+                )
+                return result
+
+            # Belum pernah ada cache sukses.
+            raise
+
+        finally:
+            try:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        "SELECT pg_advisory_unlock(%s)",
+                        (ADVISORY_LOCK_ID,),
+                    )
+            except Exception:
+                logger.exception(
+                    "Gagal melepaskan advisory lock."
+                )
 
     finally:
-        if connection is not None:
-            try:
-                if lock_acquired:
-                    with connection.cursor() as cursor:
-                        cursor.execute(
-                            "SELECT pg_advisory_unlock(%s)",
-                            (742001,)
-                        )
-                    connection.commit()
-            except Exception as error:
-                print(f"Gagal melepas lock: {error}")
-            finally:
-                connection.close()
-                
-class handler(BaseHTTPRequestHandler):
-    def send_json(self, status_code, payload):
-        body = json.dumps(
-            payload,
-            allow_nan=False,
-        ).encode("utf-8")
+        connection.close()
 
-        self.send_response(status_code)
-        self.send_header(
-            "Content-Type",
-            "application/json; charset=utf-8",
-        )
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Cache-Control", "no-store")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
+
+# ============================================================
+# RESPONS HTTP VER CEL
+# ============================================================
+
+def send_json(handler, status_code, payload):
+    body = json.dumps(
+        payload,
+        allow_nan=False,
+    ).encode("utf-8")
+
+    handler.send_response(status_code)
+    handler.send_header(
+        "Content-Type",
+        "application/json; charset=utf-8",
+    )
+    handler.send_header(
+        "Access-Control-Allow-Origin",
+        "*",
+    )
+    handler.send_header(
+        "Cache-Control",
+        "no-store",
+    )
+    handler.send_header(
+        "Content-Length",
+        str(len(body)),
+    )
+    handler.end_headers()
+    handler.wfile.write(body)
+
+
+class handler(BaseHTTPRequestHandler):
 
     def do_OPTIONS(self):
         self.send_response(204)
-        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header(
+            "Access-Control-Allow-Origin",
+            "*",
+        )
         self.send_header(
             "Access-Control-Allow-Methods",
             "GET, OPTIONS",
@@ -780,60 +748,50 @@ class handler(BaseHTTPRequestHandler):
         )
         self.end_headers()
 
-            
     def do_GET(self):
         try:
             result = get_cached_prediction()
-            self.send_json(200, result)
+
+            # Kalau belum ada cache dan refresh sedang berjalan,
+            # respons ini bukan data sukses.
+            if not result.get("success"):
+                send_json(self, 503, result)
+                return
+
+            send_json(self, 200, result)
 
         except requests.RequestException as error:
-            print(f"Error Open-Meteo: {error}")
-            self.send_json(
+            logger.exception("Open-Meteo request gagal.")
+
+            send_json(
+                self,
                 502,
                 {
                     "success": False,
                     "message": (
-                        "Gagal mengambil data dari Open-Meteo "
-                        "dan cache sebelumnya tidak tersedia."
+                        "Gagal mengambil data Open-Meteo "
+                        "dan cache sebelumnya belum tersedia."
                     ),
                     "error": str(error),
+                    "data": [],
                 },
             )
 
-        except RuntimeError as error:
-            message = str(error)
-            print(f"Error runtime: {message}")
-
-            if "Pembaruan prediksi sedang berlangsung" in message:
-                self.send_json(
-                    503,
-                    {
-                        "success": False,
-                        "message": message,
-                    },
-                )
-            else:
-                self.send_json(
-                    500,
-                    {
-                        "success": False,
-                        "message": (
-                            "Terjadi kesalahan pada backend Noxora."
-                        ),
-                        "error": message,
-                    },
-                )
-
         except Exception as error:
-            print(f"Error endpoint realtime: {error}")
-            self.send_json(
+            logger.exception(
+                "Endpoint realtime gagal."
+            )
+
+            send_json(
+                self,
                 500,
                 {
                     "success": False,
                     "message": (
-                        "Terjadi kesalahan pada proses prediksi "
-                        "dan cache sebelumnya tidak tersedia."
+                        "Terjadi kesalahan pada proses "
+                        "prediksi realtime."
                     ),
                     "error": str(error),
+                    "data": [],
                 },
             )

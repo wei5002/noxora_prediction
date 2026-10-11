@@ -153,7 +153,7 @@ def run(ids, predict):
         rows = build_rows(ids)
         return add_prediction(rows) if predict else rows
     except requests.RequestException as e:
-        raise HTTPException(status_code=502, detail=f"Gagal mengambil data Open-Meteo: {e}")
+        raise HTTPException(status_code=502, detail=f"Gagal mengambil data {e}")
     except (ValueError, KeyError, IndexError) as e:
         raise HTTPException(status_code=502, detail=f"Data realtime tidak lengkap: {e}")
 
