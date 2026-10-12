@@ -24,7 +24,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [showPredictionPopup, setShowPredictionPopup] = useState(false);
-  const [currentLocationData, setCurrentLocationData] = useState(null);
+  // const [currentLocationData, setCurrentLocationData] = useState(null);
   const [allLocations, setAllLocations] = useState([]);
 
   const locationNames = {
@@ -39,6 +39,11 @@ export default function Home() {
     9: "Karawang",
     10: "Purwakarta",
   };
+  
+  const currentLocationData =
+    allLocations.find(
+      (row) => String(row.location_id) === String(selectedLocation),
+    ) ?? null;
 
   const getLocationNO2 = (locationId) => {
     const item = allLocations.find(
@@ -204,7 +209,6 @@ export default function Home() {
     let controller = null;
 
     const load = async () => {
-      // Hindari request yang bertumpuk.
       if (isLoading || cancelled) return;
 
       const API_URL = process.env.NEXT_PUBLIC_API_URL;
@@ -239,34 +243,18 @@ export default function Home() {
 
         if (cancelled) return;
 
-        // Simpan data terbaru hanya jika respons berhasil.
         setAllLocations(result.data);
-
-        const selectedData = result.data.find(
-          (row) => String(row.location_id) === String(selectedLocation),
-        );
-
-        // Jika lokasi ditemukan, perbarui data lokasi aktif.
-        // Jika tidak ditemukan, pertahankan data sebelumnya.
-        if (selectedData) {
-          setCurrentLocationData(selectedData);
-        }
       } catch (err) {
         if (cancelled || err.name === "AbortError") return;
 
         console.error("Gagal memperbarui data realtime:", err);
-
-        // Jangan kosongkan allLocations atau currentLocationData.
-        // Data terakhir yang berhasil tetap ditampilkan.
       } finally {
         isLoading = false;
       }
     };
 
-    // Ambil data ketika halaman dibuka atau lokasi diganti.
     load();
 
-    // Perbarui data setiap 5 menit.
     const timer = setInterval(load, 5 * 60 * 1000);
 
     return () => {
@@ -274,7 +262,17 @@ export default function Home() {
       clearInterval(timer);
       controller?.abort();
     };
-  }, [selectedLocation]);
+  }, []);
+
+  // useEffect(() => {
+  //   const selectedData = allLocations.find(
+  //     (row) => String(row.location_id) === String(selectedLocation),
+  //   );
+
+  //   if (selectedData) {
+  //     setCurrentLocationData(selectedData);
+  //   }
+  // }, [selectedLocation, allLocations]);
 
   return (
     <Flex

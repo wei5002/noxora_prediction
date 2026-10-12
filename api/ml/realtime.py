@@ -1,7 +1,9 @@
-
 import json
 import os
 import logging
+import random
+import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
@@ -14,9 +16,7 @@ import psycopg2
 from psycopg2.extras import Json, RealDictCursor
 
 
-# ============================================================
 # KONFIGURASI
-# ============================================================
 
 LATITUDES = [
     -6.199997,
@@ -54,12 +54,31 @@ WEATHER_URL = (
 
 TIMEZONE = "Asia/Jakarta"
 
-
-# Cache diperbarui paling sering setiap 5 menit.
-CACHE_SECONDS = 5 * 60
 CACHE_KEY = "noxora_realtime_prediction"
+COOLDOWN_KEY = "noxora_realtime_cooldown"
 ADVISORY_LOCK_ID = 742001
-REQUEST_TIMEOUT = 20
+
+REQUEST_TIMEOUT = 15
+MAX_ATTEMPTS = 3                     
+FAILURE_COOLDOWN_SECONDS = 120      
+MIN_COOLDOWN_SECONDS = 60              
+DEFAULT_RATE_LIMIT_COOLDOWN = 15 * 60  
+MAX_COOLDOWN_SECONDS = 60 * 60
+
+
+OPEN_METEO_API_KEY = os.getenv("OPEN_METEO_API_KEY")
+
+SESSION = requests.Session()
+SESSION.headers.update({"User-Agent": "noxora-prediction/1.0"})
+
+
+class UpstreamUnavailable(Exception):
+    """Open-Meteo membatasi (429) atau sedang bermasalah."""
+
+    def __init__(self, message, cooldown_seconds):
+        super().__init__(message)
+        self.cooldown_seconds = int(cooldown_seconds)
+
 
 FEATURES_SVR = [
     "LAG1",
@@ -71,8 +90,6 @@ FEATURES_SVR = [
     "wind_speed_10m",
 ]
 
-# Nama file model XGBoost mengindikasikan model lag12.
-# Sesuaikan dengan fitur PERSIS yang digunakan saat training.
 FEATURES_XGBOOST = [
     "LAG1",
     "LAG2",
@@ -82,9 +99,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-# ============================================================
 # PATH MODEL
-# ============================================================
 
 BASE_DIR = Path(__file__).resolve().parents[2]
 
@@ -105,10 +120,7 @@ XGBOOST_MODEL_PATH = (
 )
 
 
-# ============================================================
 # DATABASE NEON
-# ============================================================
-
 def get_database_connection():
     database_url = os.getenv("DATABASE_URL")
 
@@ -145,7 +157,7 @@ def ensure_cache_table():
         connection.close()
 
 
-def load_cache(connection):
+def load_cache(connection, key=CACHE_KEY):
     with connection.cursor(
         cursor_factory=RealDictCursor
     ) as cursor:
@@ -155,7 +167,7 @@ def load_cache(connection):
             FROM realtime_prediction_cache
             WHERE cache_key = %s
             """,
-            (CACHE_KEY,),
+            (key,),
         )
 
         row = cursor.fetchone()
@@ -168,13 +180,11 @@ def load_cache(connection):
     if isinstance(payload, str):
         payload = json.loads(payload)
 
-    updated_at = row["updated_at"]
-
-    return payload, updated_at
+    return payload, row["updated_at"]
 
 
-def save_cache(connection, payload):
-    # Fungsi ini hanya dipanggil setelah prediksi berhasil.
+def save_cache(connection, payload, key=CACHE_KEY):
+    # Untuk cache prediksi: hanya dipanggil setelah prediksi berhasil.
     with connection:
         with connection.cursor() as cursor:
             cursor.execute(
@@ -190,76 +200,172 @@ def save_cache(connection, payload):
                     payload = EXCLUDED.payload,
                     updated_at = NOW()
                 """,
-                (
-                    CACHE_KEY,
-                    Json(payload),
-                ),
+                (key, Json(payload)),
             )
 
 
-def is_cache_fresh(updated_at):
-    if updated_at is None:
+def delete_cache_key(connection, key):
+    with connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "DELETE FROM realtime_prediction_cache "
+                "WHERE cache_key = %s",
+                (key,),
+            )
+
+def get_cooldown_remaining(connection):
+    payload, _ = load_cache(connection, COOLDOWN_KEY)
+
+    if not payload:
+        return 0
+
+    try:
+        return max(0, int(float(payload["until"]) - time.time()))
+    except (KeyError, TypeError, ValueError):
+        return 0
+
+
+def set_cooldown(connection, seconds, reason):
+    seconds = max(1, min(int(seconds), MAX_COOLDOWN_SECONDS))
+
+    try:
+        connection.rollback()
+        save_cache(
+            connection,
+            {"until": time.time() + seconds, "reason": reason[:300]},
+            COOLDOWN_KEY,
+        )
+    except Exception:
+        logger.exception("Gagal menyimpan cooldown.")
+
+
+def clear_cooldown(connection):
+    try:
+        delete_cache_key(connection, COOLDOWN_KEY)
+    except Exception:
+        logger.exception("Gagal menghapus cooldown.")
+
+
+def is_cache_fresh(payload):
+    if not payload:
         return False
 
-    now = datetime.now(timezone.utc)
-
-    if updated_at.tzinfo is None:
-        updated_at = updated_at.replace(
-            tzinfo=timezone.utc
-        )
-
-    age = (now - updated_at).total_seconds()
-
-    return age < CACHE_SECONDS
+    return payload.get("target_time") == format_time(
+        get_target_time()
+    )
 
 
 def add_cache_metadata(payload, updated_at):
     result = dict(payload)
 
-    now = datetime.now(timezone.utc)
+    age_seconds = None
 
     if updated_at is not None:
         if updated_at.tzinfo is None:
-            updated_at = updated_at.replace(
-                tzinfo=timezone.utc
-            )
+            updated_at = updated_at.replace(tzinfo=timezone.utc)
 
         age_seconds = max(
             0,
-            int((now - updated_at).total_seconds()),
+            int(
+                (
+                    datetime.now(timezone.utc) - updated_at
+                ).total_seconds()
+            ),
         )
 
-        result["cache"] = {
-            "cached": True,
-            "updated_at": updated_at.isoformat(),
-            "age_seconds": age_seconds,
-            "stale": age_seconds >= CACHE_SECONDS,
-        }
-    else:
-        result["cache"] = {
-            "cached": False,
-            "updated_at": None,
-            "age_seconds": None,
-            "stale": False,
-        }
+    result["cache"] = {
+        "cached": updated_at is not None,
+        "updated_at": (
+            updated_at.isoformat() if updated_at else None
+        ),
+        "age_seconds": age_seconds,
+        "stale": not is_cache_fresh(payload),
+    }
 
     return result
 
 
-# ============================================================
 # OPEN-METEO
-# ============================================================
+def build_request(url, params):
+    if not OPEN_METEO_API_KEY:
+        return url, params
 
-def fetch_api(url, params):
-    response = requests.get(
-        url,
-        params=params,
-        timeout=REQUEST_TIMEOUT,
+    url = url.replace(
+        "https://air-quality-api.",
+        "https://customer-air-quality-api.",
+    ).replace(
+        "https://api.",
+        "https://customer-api.",
     )
 
-    response.raise_for_status()
+    return url, {**params, "apikey": OPEN_METEO_API_KEY}
 
-    return response.json()
+
+def rate_limit_cooldown(response):
+    retry_after = response.headers.get("Retry-After")
+
+    if retry_after and retry_after.isdigit():
+        return max(int(retry_after), MIN_COOLDOWN_SECONDS)
+
+    try:
+        reason = str(response.json().get("reason", "")).lower()
+    except ValueError:
+        reason = ""
+
+    now = datetime.now(timezone.utc)
+
+    if "minutely" in reason:
+        return 90
+
+    if "hourly" in reason:
+        next_hour = now.replace(
+            minute=0, second=0, microsecond=0
+        ) + timedelta(hours=1)
+        return max(
+            int((next_hour - now).total_seconds()) + 5,
+            MIN_COOLDOWN_SECONDS,
+        )
+
+    if "daily" in reason:
+        return MAX_COOLDOWN_SECONDS  # cek lagi paling cepat tiap 1 jam
+
+    return DEFAULT_RATE_LIMIT_COOLDOWN
+
+
+def fetch_api(url, params):
+    url, params = build_request(url, params)
+
+    last_error = None
+
+    for attempt in range(MAX_ATTEMPTS):
+        try:
+            response = SESSION.get(
+                url,
+                params=params,
+                timeout=REQUEST_TIMEOUT,
+            )
+        except (requests.Timeout, requests.ConnectionError) as error:
+            last_error = error
+        else:
+            # 429: JANGAN di-retry. Retry hanya memperparah limit.
+            if response.status_code == 429:
+                raise UpstreamUnavailable(
+                    "Open-Meteo membatasi request (429).",
+                    rate_limit_cooldown(response),
+                )
+
+            if response.status_code >= 500:
+                last_error = requests.HTTPError(
+                    f"Open-Meteo HTTP {response.status_code}"
+                )
+            else:
+                response.raise_for_status()
+                return response.json()
+
+        if attempt < MAX_ATTEMPTS - 1:
+            time.sleep(min(2 ** attempt + random.random(), 4))
+
+    raise last_error
 
 
 def fetch_no2():
@@ -267,8 +373,8 @@ def fetch_no2():
         "latitude": ",".join(map(str, LATITUDES)),
         "longitude": ",".join(map(str, LONGITUDES)),
         "hourly": "nitrogen_dioxide",
-        "past_days": 1,
-        "forecast_days": 1,
+        "past_hours": 3,
+        "forecast_hours": 1,
         "timezone": TIMEZONE,
     }
 
@@ -319,8 +425,8 @@ def fetch_weather():
             "rain,"
             "wind_speed_10m"
         ),
-        "past_days": 1,
-        "forecast_days": 1,
+        "past_hours": 3,
+        "forecast_hours": 1,
         "timezone": TIMEZONE,
         "wind_speed_unit": "kmh",
     }
@@ -380,10 +486,7 @@ def fetch_weather():
     return df
 
 
-# ============================================================
 # WAKTU TARGET DAN PERSIAPAN FITUR
-# ============================================================
-
 def get_target_time():
     now = datetime.now(ZoneInfo(TIMEZONE))
 
@@ -497,10 +600,7 @@ def prepare_prediction_data(
     return pd.DataFrame(rows)
 
 
-# ============================================================
 # MODEL
-# ============================================================
-
 def load_models():
     if not SVR_MODEL_PATH.exists():
         raise FileNotFoundError(
@@ -529,9 +629,11 @@ def format_time(value):
 
 
 def generate_prediction():
-    # Ambil data terbaru hanya ketika cache perlu diperbarui.
-    df_no2 = fetch_no2()
-    df_weather = fetch_weather()
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        future_no2 = pool.submit(fetch_no2)
+        future_weather = pool.submit(fetch_weather)
+        df_no2 = future_no2.result()
+        df_weather = future_weather.result()
 
     target_time = get_target_time()
 
@@ -586,9 +688,16 @@ def generate_prediction():
     }
 
 
-# ============================================================
 # CACHE DAN REFRESH
-# ============================================================
+def stale_result(payload, updated_at, warning, retry_after=None):
+    result = add_cache_metadata(payload, updated_at)
+    result["warning"] = warning
+
+    if retry_after is not None:
+        result["retry_after_seconds"] = retry_after
+
+    return result
+
 
 def get_cached_prediction():
     ensure_cache_table()
@@ -598,16 +707,25 @@ def get_cached_prediction():
     try:
         cached_payload, updated_at = load_cache(connection)
 
-        # Selama cache belum berumur 30 menit,
-        # tidak ada request ke Open-Meteo atau model.
-        if cached_payload and is_cache_fresh(updated_at):
-            logger.info("Menggunakan cache realtime yang masih berlaku.")
-            return add_cache_metadata(
-                cached_payload,
-                updated_at,
+        if is_cache_fresh(cached_payload):
+            return add_cache_metadata(cached_payload, updated_at)
+
+        remaining = get_cooldown_remaining(connection)
+
+        if remaining > 0:
+            if cached_payload:
+                return stale_result(
+                    cached_payload,
+                    updated_at,
+                    "Sumber data sedang dibatasi. Data terakhir "
+                    "yang berhasil tetap ditampilkan.",
+                    remaining,
+                )
+
+            raise UpstreamUnavailable(
+                "Sumber data sedang dibatasi.", remaining
             )
 
-        # Hanya satu request yang boleh melakukan refresh.
         with connection.cursor() as cursor:
             cursor.execute(
                 "SELECT pg_try_advisory_lock(%s)",
@@ -616,16 +734,8 @@ def get_cached_prediction():
             lock_acquired = cursor.fetchone()[0]
 
         if not lock_acquired:
-            # Request lain sedang memperbarui data.
-            # Kembalikan cache lama bila sudah tersedia.
             if cached_payload:
-                logger.info(
-                    "Refresh sedang berjalan; menggunakan cache lama."
-                )
-                return add_cache_metadata(
-                    cached_payload,
-                    updated_at,
-                )
+                return add_cache_metadata(cached_payload, updated_at)
 
             return {
                 "success": False,
@@ -637,95 +747,97 @@ def get_cached_prediction():
             }
 
         try:
-            # Ambil data dan jalankan kedua model.
-            new_payload = generate_prediction()
+            cached_payload, updated_at = load_cache(connection)
 
-            # Jangan simpan respons gagal.
+            if is_cache_fresh(cached_payload):
+                return add_cache_metadata(cached_payload, updated_at)
+            new_payload = generate_prediction()
             if not new_payload.get("success"):
                 raise RuntimeError(
                     "Proses prediksi tidak menghasilkan data sukses."
                 )
 
-            # Simpan hanya setelah seluruh proses berhasil.
             save_cache(connection, new_payload)
-
-            # Baca timestamp yang benar dari database.
+            clear_cooldown(connection)
             _, saved_updated_at = load_cache(connection)
+            logger.info("Cache realtime berhasil diperbarui.")
+            return add_cache_metadata(new_payload, saved_updated_at)
 
-            logger.info(
-                "Cache realtime berhasil diperbarui."
+        except UpstreamUnavailable as error:
+            logger.warning("Open-Meteo dibatasi: %s", error)
+            set_cooldown(
+                connection, error.cooldown_seconds, str(error)
             )
 
-            return add_cache_metadata(
-                new_payload,
-                saved_updated_at,
-            )
-
-        except Exception as error:
-            logger.exception(
-                "Refresh realtime gagal: %s",
-                error,
-            )
-
-            # Jangan menimpa cache sebelumnya dengan error.
             if cached_payload:
-                result = add_cache_metadata(
+                return stale_result(
                     cached_payload,
                     updated_at,
+                    "Sumber data sedang dibatasi. Data terakhir "
+                    "yang berhasil tetap ditampilkan.",
+                    error.cooldown_seconds,
                 )
-                result["warning"] = (
-                    "Pembaruan data gagal. "
-                    "Data dan prediksi terakhir yang berhasil "
-                    "tetap ditampilkan."
-                )
-                return result
 
-            # Belum pernah ada cache sukses.
+            raise
+
+        except Exception as error:
+            logger.exception("Refresh realtime gagal: %s", error)
+            set_cooldown(
+                connection, FAILURE_COOLDOWN_SECONDS, str(error)
+            )
+
+            if cached_payload:
+                return stale_result(
+                    cached_payload,
+                    updated_at,
+                    "Pembaruan data gagal. Data dan prediksi "
+                    "terakhir yang berhasil tetap ditampilkan.",
+                    FAILURE_COOLDOWN_SECONDS,
+                )
+
             raise
 
         finally:
             try:
+                connection.rollback()
                 with connection.cursor() as cursor:
                     cursor.execute(
                         "SELECT pg_advisory_unlock(%s)",
                         (ADVISORY_LOCK_ID,),
                     )
+                connection.commit()
             except Exception:
-                logger.exception(
-                    "Gagal melepaskan advisory lock."
-                )
+                logger.exception("Gagal melepaskan advisory lock.")
 
     finally:
         connection.close()
 
 
-# ============================================================
-# RESPONS HTTP VER CEL
-# ============================================================
+# RESPONS HTTP VERCEL
 
-def send_json(handler, status_code, payload):
-    body = json.dumps(
-        payload,
-        allow_nan=False,
-    ).encode("utf-8")
+def send_json(handler, status_code, payload, cacheable=False,
+              retry_after=None):
+    body = json.dumps(payload, allow_nan=False).encode("utf-8")
 
     handler.send_response(status_code)
     handler.send_header(
-        "Content-Type",
-        "application/json; charset=utf-8",
+        "Content-Type", "application/json; charset=utf-8"
     )
-    handler.send_header(
-        "Access-Control-Allow-Origin",
-        "*",
-    )
+    handler.send_header("Access-Control-Allow-Origin", "*")
+
     handler.send_header(
         "Cache-Control",
-        "no-store",
+        (
+            "public, s-maxage=60, stale-while-revalidate=300"
+            if cacheable
+            else "no-store"
+        ),
     )
-    handler.send_header(
-        "Content-Length",
-        str(len(body)),
-    )
+
+    if retry_after is not None:
+        handler.send_header("Retry-After", str(int(retry_after)))
+
+    handler.send_header("Content-Length", str(len(body)))
     handler.end_headers()
     handler.wfile.write(body)
 
@@ -734,14 +846,8 @@ class handler(BaseHTTPRequestHandler):
 
     def do_OPTIONS(self):
         self.send_response(204)
-        self.send_header(
-            "Access-Control-Allow-Origin",
-            "*",
-        )
-        self.send_header(
-            "Access-Control-Allow-Methods",
-            "GET, OPTIONS",
-        )
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
         self.send_header(
             "Access-Control-Allow-Headers",
             "Content-Type, Authorization",
@@ -752,13 +858,33 @@ class handler(BaseHTTPRequestHandler):
         try:
             result = get_cached_prediction()
 
-            # Kalau belum ada cache dan refresh sedang berjalan,
-            # respons ini bukan data sukses.
             if not result.get("success"):
-                send_json(self, 503, result)
+                send_json(self, 503, result, retry_after=5)
                 return
 
-            send_json(self, 200, result)
+            cacheable = (
+                not result.get("warning")
+                and not result.get("cache", {}).get("stale")
+            )
+
+            send_json(self, 200, result, cacheable=cacheable)
+
+        except UpstreamUnavailable as error:
+            send_json(
+                self,
+                503,
+                {
+                    "success": False,
+                    "message": (
+                        "Sumber data cuaca/udara sedang membatasi "
+                        "request dan belum ada cache. Coba lagi "
+                        "beberapa saat."
+                    ),
+                    "retry_after_seconds": error.cooldown_seconds,
+                    "data": [],
+                },
+                retry_after=error.cooldown_seconds,
+            )
 
         except requests.RequestException as error:
             logger.exception("Open-Meteo request gagal.")
@@ -778,9 +904,7 @@ class handler(BaseHTTPRequestHandler):
             )
 
         except Exception as error:
-            logger.exception(
-                "Endpoint realtime gagal."
-            )
+            logger.exception("Endpoint realtime gagal.")
 
             send_json(
                 self,
