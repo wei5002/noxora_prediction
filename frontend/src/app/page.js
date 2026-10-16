@@ -447,7 +447,7 @@ export default function Home() {
             >
               <Flex w="100%" direction="row" gap="2vh">
                 <MiniCardLocation
-                  location="East Jakarta"
+                  location="Jakarta Timur"
                   hasil={getLocationNO2(1)}
                   lag2={getLocationLAG2(1)}
                   onSelect={() => handleSelectLocation("1")}
