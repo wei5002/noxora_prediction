@@ -147,7 +147,7 @@ export default function PredictionChart({ data }) {
         ) : (
           <Flex align="center" justify="center" h="27vh">
             <Text fontSize="sm" color="text.thrid">
-              Pilih lokasi dan tekan Send untuk melihat prediksi.
+              Select a location and click Send to view the prediction.
             </Text>
           </Flex>
         )}
