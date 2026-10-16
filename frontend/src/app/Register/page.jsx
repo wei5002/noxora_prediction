@@ -4,11 +4,11 @@ import { Button, Flex, Input, Text } from "@chakra-ui/react";
 import { PasswordInput } from "@/components/ui/password-input";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { PopupMini } from "../../components/Popup/popup";
+import { PopupMini, PopupMini2 } from "../../components/Popup/popup";
 
 export default function Register() {
   const router = useRouter();
-    const API_URL = process.env.NEXT_PUBLIC_API_URL;
+  const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
@@ -29,14 +29,25 @@ export default function Register() {
 
   const handleSignUp = async () => {
     if (!username || !email || !password || !confirmPassword) {
-      showMessage("Sign Up", "Semua data harus diisi.");
+      showMessage("Sign Up", "All fields are required.");
       return;
     }
 
     if (password !== confirmPassword) {
       showMessage(
         "Sign Up",
-        "Password dan Confirm Password tidak sama.",
+        "Password and Confirm Password do not match.",
+      );
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      showMessage(
+        "Sign Up Successful!",
+        "Your account has been created successfully. Please log in to continue.",
+        () => {
+          router.replace("/Login");
+        },
       );
       return;
     }
@@ -60,14 +71,14 @@ export default function Register() {
       if (!response.ok) {
         showMessage(
           "Sign Up",
-          data.message || "Registrasi gagal.",
+          data.message || "Registration failed.",
         );
         return;
       }
 
       showMessage(
-        "Sign Up Berhasil",
-        "Akun berhasil dibuat. Silakan login untuk melanjutkan.",
+        "Sign Up Successful",
+        "Your account has been created successfully. Please log in to continue.",
         () => {
           router.push("/Login");
         },
@@ -77,7 +88,7 @@ export default function Register() {
 
       showMessage(
         "Sign Up",
-        "Tidak dapat terhubung ke server.",
+        "Unable to connect to the server.",
       );
     }
   };
@@ -111,10 +122,11 @@ export default function Register() {
           <Text w={{ base: "100%", sm: "30vh" }}>Username</Text>
 
           <Input
-            h={"4vh"}
+            h="26px"
+            w={"100%"}
             value={username}
             onChange={(e) => setUsername(e.target.value)}
-            placeholder={"Masukkan Username..."}
+            placeholder={"Enter username..."}
             bg={"bg.input"}
             color={"blackAlpha.800"}
             _placeholder={{ color: "#5f5d5d" }}
@@ -126,10 +138,11 @@ export default function Register() {
           <Text w={{ base: "100%", sm: "30vh" }}>Email</Text>
 
           <Input
-            h={"4vh"}
+            h="26px"
+            w={"100%"}
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder={"Masukkan Email..."}
+            placeholder={"Enter email..."}
             bg={"bg.input"}
             color={"blackAlpha.800"}
             _placeholder={{ color: "#5f5d5d" }}
@@ -141,10 +154,11 @@ export default function Register() {
           <Text w={{ base: "100%", sm: "29vh" }}>Password</Text>
 
           <PasswordInput
-            h={"4vh"}
+            h="26px"
+            w={"100%"}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            placeholder={"Masukkan Password..."}
+            placeholder={"Enter password..."}
             bg={"bg.input"}
             color={"blackAlpha.800"}
             _placeholder={{ color: "#5f5d5d" }}
@@ -158,10 +172,11 @@ export default function Register() {
           </Text>
 
           <PasswordInput
-            h={"4vh"}
+            h="26px"
+            w={"100%"}
             value={confirmPassword}
             onChange={(e) => setConfirmPassword(e.target.value)}
-            placeholder={"Masukkan Password Kembali..."}
+            placeholder={"Re-enter password..."}
             bg={"bg.input"}
             color={"blackAlpha.800"}
             _placeholder={{ color: "#5f5d5d" }}
@@ -171,7 +186,8 @@ export default function Register() {
         {/* Button */}
         <Flex mt={"1vh"} w={"100%"} justify={"center"}>
           <Button
-            w={"30vh"}
+            w={"100px"}
+            h={"32px"}
             fontWeight={"bold"}
             bg={"button.primary"}
             _hover={{ bg: "hover.primary" }}
@@ -184,17 +200,13 @@ export default function Register() {
       </Flex>
 
       {showPopup && (
-        <PopupMini
+        <PopupMini2
           title={popupTitle}
           message={popupMessage}
           button1="OK"
-          button2=""
           onClick1={() => {
             setShowPopup(false);
             popupAction();
-          }}
-          onClick2={() => {
-            setShowPopup(false);
           }}
         />
       )}

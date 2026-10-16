@@ -27,6 +27,7 @@ export default function PredictionChart({ data }) {
         enabled: false,
       },
     },
+    colors: ["#25bdeb", "#d74532"],
 
     dataLabels: {
       enabled: false,
@@ -119,7 +120,7 @@ export default function PredictionChart({ data }) {
       <Flex
         w={{ base: "100%", md: "100%" }}
         direction="column"
-        p={"2.5vh"}
+        p={"20px"}
         boxShadow="0 4px 12px rgba(0, 0, 0, 0.2)"
         borderRadius={"2vh"}
         bg={"bg.secondary"}
@@ -144,7 +145,7 @@ export default function PredictionChart({ data }) {
             </Flex>
           </Flex>
         ) : (
-          <Flex h="260px" align="center" justify="center">
+          <Flex align="center" justify="center" h="27vh">
             <Text fontSize="sm" color="text.thrid">
               Pilih lokasi dan tekan Send untuk melihat prediksi.
             </Text>

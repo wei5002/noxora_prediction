@@ -1,4 +1,3 @@
-// components/Header.jsx
 "use client";
 
 import { Button, Flex, Text } from "@chakra-ui/react";
@@ -18,7 +17,7 @@ export default function Header() {
   const [deferredPrompt, setDeferredPrompt] = useState(null);
   const [showInstallButton, setShowInstallButton] = useState(true);
 
-  // CEK STATUS LOGIN
+  // CHECK LOGIN STATUS
   useEffect(() => {
     const checkLogin = () => {
       const loggedIn = localStorage.getItem("isLoggedIn");
@@ -28,10 +27,10 @@ export default function Header() {
 
     checkLogin();
 
-    // Perubahan localStorage dari tab/window lain
+    // Listen for localStorage changes from other tabs/windows
     window.addEventListener("storage", checkLogin);
 
-    // Perubahan login dari halaman yang sama
+    // Listen for login changes on the same page
     window.addEventListener("login", checkLogin);
 
     return () => {
@@ -46,12 +45,12 @@ export default function Header() {
       setNow(new Date());
     };
 
-    // Tunggu sampai effect selesai sebelum setState pertama
+    // Wait until the effect finishes before the first setState
     const timeout = setTimeout(() => {
       updateDate();
     }, 0);
 
-    // Update setiap 1 detik
+    // Update every second
     const interval = setInterval(() => {
       updateDate();
     }, 1000);
@@ -104,19 +103,6 @@ export default function Header() {
       router.push("/");
     }
   };
-
-  // UPLOAD / PREDICTION
-  // const handleUploadClick = () => {
-  //   if (pathname === "/") {
-  //     document.getElementById("uploadImage")?.scrollIntoView({
-  //       behavior: "smooth",
-  //     });
-  //   } else {
-  //     sessionStorage.setItem("scrollTarget", "uploadImage");
-
-  //     router.push("/");
-  //   }
-  // };
 
   // LOGOUT
   const handleLogout = () => {
@@ -171,17 +157,12 @@ export default function Header() {
           base: "1vh",
           md: "2vh",
         }}
-        px={{
-          base: "2vh",
-          sm: "3vh",
-          md: "3vh",
-          lg: "4vh",
-        }}
+        px="20px"
         py={{
-          base: "2vh",
-          sm: "2.5vh",
-          md: "2.5vh",
-          lg: "2.5vh",
+          base: "13px",
+          sm: "13px",
+          md: "17px",
+          lg: "17px",
         }}
       >
         <Flex
@@ -199,17 +180,14 @@ export default function Header() {
           <Flex
             direction="row"
             align="center"
-            gap="1vh"
+            gap="8px"
             cursor="pointer"
             flexShrink={0}
             onClick={handleLogoClick}
           >
-            <RiCloudWindyFill size="4vh" />
+            <RiCloudWindyFill size="25px" />
 
-            <Text
-              fontWeight="bold"
-              fontSize="lg"
-            >
+            <Text fontWeight="bold" fontSize="lg">
               Noxora
             </Text>
           </Flex>
@@ -254,40 +232,40 @@ export default function Header() {
           }}
           flexShrink={0}
         >
-    {showInstallButton && (
-      <Button
-        w={{
-          base: "15vh",
-          sm: "16vh",
-        }}
-        h={{
-          base: "4vh",
-          sm: "4.5vh",
-        }}
-        _hover={{
-          bg: "hover.primary",
-        }}
-        fontSize="sm"
-        fontWeight="bold"
-        bg="button.six"
-        borderRadius="10vh"
-        onClick={handleInstallApp}
-      >
-        Add to App
-      </Button>
-    )}
+          {showInstallButton && (
+            <Button
+              w={{
+                base: "100px",
+                sm: "100px",
+              }}
+              h={{
+                base: "32px",
+                sm: "32px",
+              }}
+              _hover={{
+                bg: "hover.primary",
+              }}
+              fontSize="sm"
+              fontWeight="bold"
+              bg="button.six"
+              borderRadius="10vh"
+              onClick={handleInstallApp}
+            >
+              Add to App
+            </Button>
+          )}
 
           {/* LOGIN / PROFILE */}
           {isLoggedIn ? (
             <>
               <Button
                 w={{
-                  base: "12vh",
-                  sm: "13vh",
+                  base: "100px",
+                  sm: "100px",
                 }}
                 h={{
-                  base: "4vh",
-                  sm: "4.5vh",
+                  base: "32px",
+                  sm: "32px",
                 }}
                 _hover={{
                   bg: "hover.primary",
@@ -303,12 +281,12 @@ export default function Header() {
 
               <Button
                 w={{
-                  base: "12vh",
-                  sm: "13vh",
+                  base: "100px",
+                  sm: "100px",
                 }}
                 h={{
-                  base: "4vh",
-                  sm: "4.5vh",
+                  base: "32px",
+                  sm: "32px",
                 }}
                 _hover={{
                   bg: "hover.primary",
@@ -326,12 +304,12 @@ export default function Header() {
             <>
               <Button
                 w={{
-                  base: "12vh",
-                  sm: "13vh",
+                  base: "100px",
+                  sm: "100px",
                 }}
                 h={{
-                  base: "4vh",
-                  sm: "4.5vh",
+                  base: "32px",
+                  sm: "32px",
                 }}
                 _hover={{
                   bg: "hover.primary",
@@ -347,12 +325,12 @@ export default function Header() {
 
               <Button
                 w={{
-                  base: "12vh",
-                  sm: "13vh",
+                  base: "100px",
+                  sm: "100px",
                 }}
                 h={{
-                  base: "4vh",
-                  sm: "4.5vh",
+                  base: "32px",
+                  sm: "32px",
                 }}
                 _hover={{
                   bg: "hover.primary",
@@ -373,8 +351,8 @@ export default function Header() {
       {showLogoutPopup && (
         <PopupMini
           title="Logout"
-          message="Apakah Anda yakin ingin logout?"
-          button1="Batal"
+          message="Are you sure you want to log out?"
+          button1="Cancel"
           button2="Logout"
           onClick1={() => setShowLogoutPopup(false)}
           onClick2={confirmLogout}

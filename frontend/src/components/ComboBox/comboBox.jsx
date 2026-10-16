@@ -58,7 +58,7 @@ export const ComboBoxDashboard = ({
       onInputValueChange={handleInputChange}
       minH="1vh"
     >
-      <Combobox.Control minH="2vh">
+      <Combobox.Control minH="24px">
         <Combobox.Input
           bg="whiteAlpha.900"
           color="blackAlpha.800"
@@ -66,11 +66,11 @@ export const ComboBoxDashboard = ({
             color: "blackAlpha.800",
             opacity: 1,
           }}
-          minH="4vh"
+          minH="24px"
           placeholder={selectedItem?.label ?? placeholder}
         />
 
-        <Combobox.IndicatorGroup minH="2vh" color="grey">
+        <Combobox.IndicatorGroup minH="24px" color="grey">
           <Combobox.ClearTrigger />
           <Combobox.Trigger />
         </Combobox.IndicatorGroup>

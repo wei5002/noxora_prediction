@@ -48,7 +48,7 @@ export default function Profile() {
         if (!response.ok) {
           showMessage(
             "Profile",
-            data.message || "Gagal mengambil data profile.",
+            data.message || "Failed to retrieve profile data.",
           );
           return;
         }
@@ -57,12 +57,12 @@ export default function Profile() {
         setEmail(data.user.email || "");
         setTelp(data.user.phoneNumber || "");
 
-        // Simpan data terbaru ke localStorage
+        // Save the latest data to localStorage
         localStorage.setItem("user", JSON.stringify(data.user));
       } catch (error) {
         console.error("Error:", error);
 
-        showMessage("Profile", "Tidak dapat terhubung ke server.");
+        showMessage("Profile", "Unable to connect to the server.");
       }
     };
 
@@ -80,7 +80,7 @@ export default function Profile() {
     if (!storedUser) {
       setShowDeletePopup(false);
 
-      showMessage("Delete Account", "Data akun tidak ditemukan.");
+      showMessage("Delete Account", "Account data could not be found.");
 
       return;
     }
@@ -97,21 +97,24 @@ export default function Profile() {
       if (!response.ok) {
         setShowDeletePopup(false);
 
-        showMessage("Delete Account", data.message || "Gagal menghapus akun.");
+        showMessage(
+          "Delete Account",
+          data.message || "Failed to delete the account.",
+        );
 
         return;
       }
 
-      // Hapus data login dari localStorage
+      // Remove login data from localStorage
       localStorage.removeItem("user");
       localStorage.removeItem("isLoggedIn");
 
-      // Beritahu component lain bahwa user sudah logout
+      // Notify other components that the user has logged out
       window.dispatchEvent(new Event("login"));
 
       setShowDeletePopup(false);
 
-      showMessage("Delete Account", "Akun berhasil dihapus.", () => {
+      showMessage("Delete Account", "Account successfully deleted.", () => {
         router.push("/Login");
       });
     } catch (error) {
@@ -119,13 +122,13 @@ export default function Profile() {
 
       setShowDeletePopup(false);
 
-      showMessage("Delete Account", "Tidak dapat terhubung ke server.");
+      showMessage("Delete Account", "Unable to connect to the server.");
     }
   };
 
   // EDIT / SAVE PROFILE
   const handleEdit = async () => {
-    // Kalau belum edit → masuk mode edit
+    // If not editing, enter edit mode
     if (!isEditing) {
       setIsEditing(true);
       return;
@@ -134,34 +137,34 @@ export default function Profile() {
     const storedUser = localStorage.getItem("user");
 
     if (!storedUser) {
-      showMessage("Profile", "Data akun tidak ditemukan.");
+      showMessage("Profile", "Account data could not be found.");
 
       return;
     }
 
     const user = JSON.parse(storedUser);
 
-    // NORMALISASI DATA
+    // NORMALIZE DATA
     const normalizedUsername = username.trim().toLowerCase();
     const normalizedEmail = email.trim().toLowerCase();
     const normalizedTelp = telp.trim();
 
-    // VALIDASI USERNAME
+    // VALIDATE USERNAME
     if (!normalizedUsername) {
-      showMessage("Profile", "Username wajib diisi.");
+      showMessage("Profile", "Username is required.");
 
       return;
     }
 
     if (normalizedUsername.length < 6) {
-      showMessage("Profile", "Username minimal 6 karakter.");
+      showMessage("Profile", "Username must be at least 6 characters long.");
 
       return;
     }
 
-    // VALIDASI EMAIL
+    // VALIDATE EMAIL
     if (!normalizedEmail) {
-      showMessage("Profile", "Email wajib diisi.");
+      showMessage("Profile", "Email is required.");
 
       return;
     }
@@ -169,14 +172,14 @@ export default function Profile() {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
     if (!emailRegex.test(normalizedEmail)) {
-      showMessage("Profile", "Format email tidak valid.");
+      showMessage("Profile", "Invalid email format.");
 
       return;
     }
 
-    // VALIDASI NOMOR TELEPON
+    // VALIDATE PHONE NUMBER
     if (normalizedTelp && !/^\d+$/.test(normalizedTelp)) {
-      showMessage("Profile", "Nomor telepon hanya boleh berisi angka.");
+      showMessage("Profile", "Phone number can only contain digits.");
 
       return;
     }
@@ -197,33 +200,31 @@ export default function Profile() {
       const data = await response.json();
 
       if (!response.ok) {
-        showMessage("Profile", data.message || "Gagal memperbarui profile.");
+        showMessage("Profile", data.message || "Failed to update profile.");
 
         return;
       }
 
       // UPDATE LOCAL STORAGE
-
       localStorage.setItem("user", JSON.stringify(data.user));
 
-      // UPDATE TAMPILAN
-
+      // UPDATE DISPLAY
       setUsername(data.user.username || "");
       setEmail(data.user.email || "");
       setTelp(data.user.phoneNumber || "");
 
       setIsEditing(false);
 
-      showMessage("Profile", "Profile berhasil diperbarui.");
+      showMessage("Profile", "Profile successfully updated.");
     } catch (error) {
       console.error("Error:", error);
 
-      showMessage("Profile", "Tidak dapat terhubung ke server.");
+      showMessage("Profile", "Unable to connect to the server.");
     }
   };
 
   return (
-    <Flex w="100%" minH="100vh" justify="center" align="center">
+    <Flex w="100%" minH="100vh" justify="center" align="center" mt="5vh">
       <Flex
         boxShadow="0 4px 12px rgba(0, 0, 0, 0.2)"
         bg="bg.secondary"
@@ -242,10 +243,10 @@ export default function Profile() {
           borderBottom="1px solid #dfdddd"
           pb="2vh"
           gap="1vh"
-          direction={{ base: "column", sm: "row" }}
+          direction={{ base: "column", lg: "row" }}
         >
           <Flex direction="row" gap="2vh" align="center">
-            <Avatar.Root w="12vh" h="12vh">
+            <Avatar.Root w="80px" h="80px">
               <Avatar.Fallback name={username} />
               <Avatar.Image src="" />
             </Avatar.Root>
@@ -257,28 +258,33 @@ export default function Profile() {
               justify="space-between"
               align="center"
             >
-              <Flex w="100%" direction="column" gap="0.5vh">
+              <Flex w="100%" direction="column" gap="3px">
                 <Text fontWeight="bold" fontSize="xl">
                   {username}
                 </Text>
+                <Flex display={{ base: "none", sm: "flex" }} gap="4px">
+                  <Flex direction="row" gap="1vh" align="center">
+                    <Text color="text.thrid" fontSize="sm" w="50px">
+                      Email
+                    </Text>
 
-                <Flex direction="row" gap="1vh" align="center">
-                  <Text color="text.thrid" fontSize="sm" w="8vh">
-                    Email
-                  </Text>
-
-                  <Text color="text.thrid" fontSize="sm">
-                    :
-                  </Text>
-
+                    <Text color="text.thrid" fontSize="sm">
+                      :
+                    </Text>
+                  </Flex>
                   <Text color="text.thrid" fontSize="sm">
                     {email}
                   </Text>
                 </Flex>
 
-                <Flex direction="row" gap="1vh" align="center">
-                  <Text color="text.thrid" fontSize="sm" w="8vh">
-                    Telp.
+                <Flex
+                  display={{ base: "none", sm: "flex" }}
+                  direction="row"
+                  gap="1vh"
+                  align="center"
+                >
+                  <Text color="text.thrid" fontSize="sm" w="50px">
+                    Phone
                   </Text>
 
                   <Text color="text.thrid" fontSize="sm">
@@ -301,14 +307,15 @@ export default function Profile() {
             align="end"
           >
             <Button
-              w={{ base: "100%", sm: "20vh" }}
+              h={"35px"}
+              w={{ base: "100%", lg: "140px" }}
               fontWeight="bold"
               bg="button.third"
               _hover={{
                 bg: "hover.primary",
               }}
               onClick={() => router.push("/ChangePassword")}
-              borderRadius="4vh"
+              borderRadius="full"
             >
               Change Password
             </Button>
@@ -317,15 +324,15 @@ export default function Profile() {
 
         {/* Username */}
         <Flex direction="row" align="center">
-          <Text w="30vh">Username</Text>
+          <Text w="170px">Username</Text>
 
           <Input
             color={"black "}
             bg={isEditing ? "white" : "gray.100"}
-            h="4vh"
+            h="24px"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
-            placeholder="Masukkan Username..."
+            placeholder="Enter username..."
             _placeholder={{
               color: "text.thrid",
             }}
@@ -335,15 +342,15 @@ export default function Profile() {
 
         {/* Email */}
         <Flex direction="row" align="center">
-          <Text w="30vh">Email</Text>
+          <Text w="170px">Email</Text>
 
           <Input
             bg={isEditing ? "white" : "gray.100"}
             color={"black "}
-            h="4vh"
+            h="24px"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder="Masukkan Email..."
+            placeholder="Enter email..."
             _placeholder={{
               color: "text.thrid",
             }}
@@ -351,14 +358,14 @@ export default function Profile() {
           />
         </Flex>
 
-        {/* Telp */}
+        {/* Phone */}
         <Flex direction="row" align="center">
-          <Text w="30vh">Telp</Text>
+          <Text w="170px">Phone</Text>
 
           <Input
             color={"black "}
             bg={isEditing ? "white" : "gray.100"}
-            h="4vh"
+            h="24px"
             value={isEditing ? telp : telp || "-"}
             onChange={(e) => {
               const value = e.target.value;
@@ -367,7 +374,7 @@ export default function Profile() {
                 setTelp(value);
               }
             }}
-            placeholder="Masukkan Nomor Telepon..."
+            placeholder="Enter phone number..."
             _placeholder={{
               color: "text.thrid",
             }}
@@ -381,16 +388,18 @@ export default function Profile() {
           justify="center"
           direction={{ base: "column", sm: "row" }}
           gap="2vh"
+          align="center"
         >
           {/* Delete Account */}
           <Button
-            w={{ base: "100%", sm: "20vh" }}
+            w={"130px"}
+            h={"32px"}
             fontWeight="bold"
             bg="button.fouth"
             _hover={{
               bg: "hover.primary",
             }}
-            borderRadius="4vh"
+            borderRadius="full"
             onClick={handleDeleteAccount}
           >
             Delete Account
@@ -398,13 +407,14 @@ export default function Profile() {
 
           {/* Edit / Save */}
           <Button
-            w={{ base: "100%", sm: "20vh" }}
+            w={"130px"}
+            h={"32px"}
             fontWeight="bold"
             bg="button.primary"
             _hover={{
               bg: "hover.primary",
             }}
-            borderRadius="4vh"
+            borderRadius="full"
             onClick={handleEdit}
           >
             {isEditing ? "Save" : "Edit"}
@@ -415,7 +425,7 @@ export default function Profile() {
       {showDeletePopup && (
         <PopupMini
           title="Delete Account"
-          message="Apakah Anda yakin ingin menghapus akun?"
+          message="Are you sure you want to delete your account?"
           onClick1={() => setShowDeletePopup(false)}
           onClick2={confirmDeleteAccount}
           button1="Cancel"

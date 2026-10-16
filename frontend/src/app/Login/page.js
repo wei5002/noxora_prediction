@@ -18,7 +18,7 @@ export default function Login() {
 
   const handleLogin = async () => {
     if (!email || !password) {
-      alert("Email dan password wajib diisi.");
+      alert("Email and password are required.");
       return;
     }
 
@@ -37,7 +37,7 @@ export default function Login() {
       const data = await response.json();
 
       if (!response.ok) {
-        alert(data.message || "Login gagal.");
+        alert(data.message || "Login failed.");
         return;
       }
 
@@ -49,7 +49,7 @@ export default function Login() {
       setShowLoginPopup(true);
     } catch (error) {
       console.error("Error:", error);
-      alert("Tidak dapat terhubung ke server.");
+      alert("Unable to connect to the server.");
     }
   };
 
@@ -81,18 +81,19 @@ export default function Login() {
           direction={{ base: "column", sm: "row" }}
           align={"center"}
           justify={"space-between"}
+          gap={"2vh"}
         >
           <Text w={{ base: "100%", sm: "30vh" }}>Email</Text>
 
           <Input
+            h="26px"
             bg={"bg.input"}
             color={"blackAlpha.800"}
             _placeholder={{ color: "#5f5d5d" }}
-            h={"4vh"}
             w={"100%"}
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder={"Masukkan Email..."}
+            placeholder={"Enter your email..."}
           />
         </Flex>
 
@@ -100,15 +101,16 @@ export default function Login() {
           direction={{ base: "column", sm: "row" }}
           align="center"
           justify="space-between"
+          gap={"2vh"}
         >
           <Text w={{ base: "100%", sm: "29vh" }}>Password</Text>
 
           <PasswordInput
-            h="4vh"
+            h="26px"
             w={"100%"}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            placeholder="Masukkan Password..."
+            placeholder="Enter your password..."
             bg={"bg.input"}
             color={"blackAlpha.800"}
             _placeholder={{ color: "#5f5d5d" }}
@@ -137,7 +139,8 @@ export default function Login() {
           gap={"1vh"}
         >
           <Button
-            w={"30vh"}
+            w={"100px"}
+            h={"32px"}
             fontWeight={"bold"}
             bg={"button.primary"}
             _hover={{
@@ -171,8 +174,8 @@ export default function Login() {
 
       {showLoginPopup && (
         <PopupMini2
-          title="Login Berhasil"
-          message="Login berhasil! Selamat datang di Noxora."
+          title="Login Successful"
+          message="Login successful! Welcome to Noxora."
           button1="OK"
           onClick1={() => {
             setShowLoginPopup(false);

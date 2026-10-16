@@ -33,29 +33,38 @@ export default function ChangePassword() {
     const resetToken = params.get("token");
 
     if (!newPassword) {
-      showMessage("Change Password", "Password baru harus diisi.");
+      showMessage("Change Password", "New password is required.");
       return;
     }
 
     if (newPassword.length < 8) {
-      showMessage("Change Password", "Password baru minimal 8 karakter.");
+      showMessage(
+        "Change Password",
+        "New password must be at least 8 characters long.",
+      );
       return;
     }
 
     if (!confirmPassword) {
-      showMessage("Change Password", "Confirm new password harus diisi.");
+      showMessage(
+        "Change Password",
+        "Please confirm your new password.",
+      );
       return;
     }
 
     if (newPassword !== confirmPassword) {
-      showMessage("Change Password", "Confirm new password tidak sama.");
+      showMessage(
+        "Change Password",
+        "New password and confirmation password do not match.",
+      );
       return;
     }
 
     try {
       let response;
 
-      // RESET PASSWORD DARI EMAIL
+      // RESET PASSWORD FROM EMAIL
       if (resetToken) {
         response = await fetch(`${API_URL}/reset-password`, {
           method: "POST",
@@ -70,14 +79,14 @@ export default function ChangePassword() {
         });
       }
 
-      // CHANGE PASSWORD DARI PROFILE
+      // CHANGE PASSWORD FROM PROFILE
       else {
         const storedUser = localStorage.getItem("user");
 
         if (!storedUser) {
           showMessage(
             "Change Password",
-            "Akun tidak ditemukan. Silakan login terlebih dahulu.",
+            "Account not found. Please log in first.",
             () => {
               router.push("/Login");
             },
@@ -105,18 +114,21 @@ export default function ChangePassword() {
       if (!response.ok) {
         showMessage(
           "Change Password",
-          data.message || "Gagal mengubah password.",
+          data.message || "Failed to change password.",
         );
         return;
       }
 
-      showMessage("Change Password", "Password berhasil diubah.", () => {
+      showMessage("Change Password", "Password changed successfully.", () => {
         router.push("/Login");
       });
     } catch (error) {
       console.error("Change Password Error:", error);
 
-      showMessage("Change Password", "Tidak dapat terhubung ke server.");
+      showMessage(
+        "Change Password",
+        "Unable to connect to the server.",
+      );
     }
   };
 
@@ -132,7 +144,7 @@ export default function ChangePassword() {
           xl: "40%",
         }}
         py="3vh"
-        px="4vh"
+        px="25px"
         direction="column"
         gap="2vh"
         borderRadius="2vh"
@@ -160,10 +172,10 @@ export default function ChangePassword() {
             <Text w="100%">New Password</Text>
 
             <PasswordInput
-              h="4vh"
+              h="26px"
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
-              placeholder="Masukkan password baru..."
+              placeholder="Enter new password..."
               bg="bg.input"
               color="blackAlpha.800"
               _placeholder={{
@@ -182,10 +194,10 @@ export default function ChangePassword() {
             <Text w="100%">Confirm New Password</Text>
 
             <PasswordInput
-              h="4vh"
+              h="26px"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
-              placeholder="Konfirmasi password baru..."
+              placeholder="Confirm your new password..."
               bg="bg.input"
               color="blackAlpha.800"
               _placeholder={{
@@ -203,7 +215,8 @@ export default function ChangePassword() {
             mt="1vh"
           >
             <Button
-              w="30vh"
+              h="34px"
+              w={"150px"}
               fontWeight="bold"
               bg="button.primary"
               _hover={{

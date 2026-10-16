@@ -21,17 +21,17 @@ export default function ForgotPassword() {
   };
 
   const handleForgotPassword = async () => {
-    // Cek email
+    // Validate email
     if (!email) {
-      showMessage("Forgot Password", "Silakan masukkan email Anda.");
+      showMessage("Forgot Password", "Please enter your email address.");
       return;
     }
 
-    // Cek format email
+    // Validate email format
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
     if (!emailRegex.test(email)) {
-      showMessage("Forgot Password", "Format email tidak valid.");
+      showMessage("Forgot Password", "Invalid email format.");
       return;
     }
 
@@ -51,20 +51,20 @@ export default function ForgotPassword() {
       if (!response.ok) {
         showMessage(
           "Forgot Password",
-          data.message || "Gagal mengirim reset password.",
+          data.message || "Failed to send the password reset email.",
         );
         return;
       }
 
-      // Tampilkan popup
+      // Display popup
       showMessage(
-        "Email Terkirim",
-        "Silakan cek email Anda untuk mendapatkan link reset password.",
+        "Email Sent",
+        "Please check your email for the password reset link.",
       );
     } catch (error) {
       console.error("Error:", error);
 
-      showMessage("Forgot Password", "Tidak dapat terhubung ke server.");
+      showMessage("Forgot Password", "Unable to connect to the server.");
     }
   };
 
@@ -104,10 +104,10 @@ export default function ForgotPassword() {
 
             <Input
               w={{ base: "100%", sm: "75%" }}
-              h="4vh"
+              h="26px"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="Masukkan Email Anda..."
+              placeholder="Enter your email..."
               bg={"bg.input"}
               color={"blackAlpha.800"}
               _placeholder={{ color: "#5f5d5d" }}
@@ -124,7 +124,8 @@ export default function ForgotPassword() {
             mt="1vh"
           >
             <Button
-              w="30vh"
+              w={"130px"}
+              h={"32px"}
               fontWeight="bold"
               bg="button.primary"
               _hover={{
@@ -148,7 +149,7 @@ export default function ForgotPassword() {
           onClick1={() => {
             setShowPopup(false);
 
-            if (popupTitle === "Email Terkirim") {
+            if (popupTitle === "Email Sent") {
               router.push("/Login");
             }
           }}

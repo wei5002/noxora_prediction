@@ -18,12 +18,12 @@ export const sendResetPasswordEmail = async (email, resetLink) => {
   await transporter.sendMail({
     from: `"Noxora" <${process.env.GMAIL_USER}>`,
     to: email,
-    subject: "Reset Password Noxora",
+    subject: "Reset Your Noxora Password",
     html: `
-      <h2>Reset Password Noxora</h2>
-      <p>Silakan klik link berikut untuk reset password:</p>
+      <h2>Reset Your Noxora Password</h2>
+      <p>Please click the link below to reset your password:</p>
       <a href="${resetLink}">Reset Password</a>
-      <p>Link berlaku selama 1 jam.</p>
+      <p>This link will expire in 1 hour.</p>
     `,
   });
 };

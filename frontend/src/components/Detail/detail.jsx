@@ -92,7 +92,7 @@ export const MiniCard = ({  title, hasil }) => {
   return (
     <Flex
       w={"100%"}
-      p={"2.5vh"}
+     p={"20px"}
       borderRadius={"2vh"}
       bg={"bg.secondary"}
       // h={"fit-content"}
@@ -130,7 +130,7 @@ export const MiniCardLocation = ({
       w={"50%"}
       minH={"18vh"}
       py={"2vh"}
-      px={"2.5vh"}
+      px={"20px"}
       borderRadius={"2vh"}
       direction={"column"}
       justify={"space-between"}
@@ -141,12 +141,12 @@ export const MiniCardLocation = ({
       <Flex
         direction={"row"}
         align={"center"}
-        gap={"0.5vh"}
+        gap={"1vh"}
         mb={"0.5vh"}
       >
-        <FaLocationDot size={"1.75vh"} />
+        <FaLocationDot size={"14px"} />
 
-        <Text fontSize={"1.85vh"}>
+        <Text fontSize={"xs"}>
           {location}
         </Text>
       </Flex>
@@ -205,7 +205,7 @@ export const MiniCardLocation = ({
       <Flex
         borderTop={"1px solid #eae9e9"}
         pt={"0.75vh"}
-        minH={"3vh"}
+        minH={"22px"}
         direction={"row"}
         justify={"space-between"}
         align={"center"}
@@ -247,7 +247,7 @@ export const InputPrediction = ({
           readOnly
           bg={"whiteAlpha.900"}
           color={"blackAlpha.800"}
-          h={"4vh"}
+          h={"22px"}
           value={value ?? ""}
           onChange={onchange}
           placeholder={placeholder}

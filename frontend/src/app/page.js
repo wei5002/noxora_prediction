@@ -39,7 +39,7 @@ export default function Home() {
     9: "Karawang",
     10: "Purwakarta",
   };
-  
+
   const currentLocationData =
     allLocations.find(
       (row) => String(row.location_id) === String(selectedLocation),
@@ -76,7 +76,7 @@ export default function Home() {
     }
 
     if (!selectedPredictionLocation) {
-      setError("Silakan pilih lokasi terlebih dahulu.");
+      setError("Please select a location first.");
       return;
     }
 
@@ -84,15 +84,15 @@ export default function Home() {
       setLoading(true);
       setError("");
 
-      // Gunakan data yang sudah dimuat oleh useEffect.
-      // Tidak memanggil Open-Meteo lagi ketika tombol Send ditekan.
+      // Use data already loaded by useEffect.
+      // Do not call Open-Meteo again when the Send button is clicked.
       const selectedData = allLocations.find(
         (row) => String(row.location_id) === String(selectedPredictionLocation),
       );
 
       if (!selectedData) {
         throw new Error(
-          "Data lokasi belum tersedia. Tunggu data realtime selesai dimuat.",
+          "Location data is not available yet. Please wait for the real-time data to finish loading.",
         );
       }
 
@@ -106,14 +106,14 @@ export default function Home() {
         selectedData.predicted_nitrogen_dioxide == null ||
         !Number.isFinite(predictedSVR)
       ) {
-        throw new Error("Data prediksi SVR tidak tersedia.");
+        throw new Error("SVR prediction data is not available.");
       }
 
       if (
         selectedData.predicted_nitrogen_dioxide_xgboost == null ||
         !Number.isFinite(predictedXGBoost)
       ) {
-        throw new Error("Data prediksi XGBoost tidak tersedia.");
+        throw new Error("XGBoost prediction data is not available.");
       }
 
       const lagValues = [
@@ -123,10 +123,10 @@ export default function Home() {
       ].map(Number);
 
       if (!lagValues.every(Number.isFinite)) {
-        throw new Error("Data historis NO₂ (LAG1–LAG3) tidak lengkap.");
+        throw new Error("Historical NO₂ data (LAG1–LAG3) is incomplete.");
       }
 
-      // Target waktu prediksi dari endpoint Python.
+      // Prediction target time from the Python endpoint.
       const targetTimeValue = String(selectedData.target_time || "");
 
       const targetTimeMatch = targetTimeValue.match(
@@ -138,10 +138,10 @@ export default function Home() {
         : "";
 
       if (!targetTime) {
-        throw new Error("Waktu prediksi tidak tersedia.");
+        throw new Error("Prediction time is not available.");
       }
 
-      // Urutan grafik: LAG3, LAG2, LAG1, hasil prediksi.
+      // Chart order: LAG3, LAG2, LAG1, prediction result.
       const svrChartSeries = [...lagValues, predictedSVR].map((value) =>
         Number(value.toFixed(2)),
       );
@@ -181,9 +181,11 @@ export default function Home() {
         chartCategories,
       });
     } catch (err) {
-      console.error("Gagal menampilkan prediksi:", err);
+      console.error("Failed to display prediction:", err);
 
-      setError(err.message || "Terjadi kesalahan saat menampilkan prediksi.");
+      setError(
+        err.message || "An error occurred while displaying the prediction.",
+      );
     } finally {
       setLoading(false);
     }
@@ -214,7 +216,7 @@ export default function Home() {
       const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
       if (!API_URL) {
-        console.error("NEXT_PUBLIC_API_URL belum dikonfigurasi.");
+        console.error("NEXT_PUBLIC_API_URL is not configured.");
         return;
       }
 
@@ -233,12 +235,12 @@ export default function Home() {
           throw new Error(
             result?.message ||
               result?.error ||
-              `Gagal mengambil data realtime. HTTP ${response.status}`,
+              `Failed to fetch real-time data. HTTP ${response.status}`,
           );
         }
 
         if (!result?.success || !Array.isArray(result.data)) {
-          throw new Error("Data realtime tidak tersedia.");
+          throw new Error("Real-time data is not available.");
         }
 
         if (cancelled) return;
@@ -247,7 +249,7 @@ export default function Home() {
       } catch (err) {
         if (cancelled || err.name === "AbortError") return;
 
-        console.error("Gagal memperbarui data realtime:", err);
+        console.error("Failed to update real-time data:", err);
       } finally {
         isLoading = false;
       }
@@ -263,16 +265,6 @@ export default function Home() {
       controller?.abort();
     };
   }, []);
-
-  // useEffect(() => {
-  //   const selectedData = allLocations.find(
-  //     (row) => String(row.location_id) === String(selectedLocation),
-  //   );
-
-  //   if (selectedData) {
-  //     setCurrentLocationData(selectedData);
-  //   }
-  // }, [selectedLocation, allLocations]);
 
   return (
     <Flex
@@ -299,11 +291,11 @@ export default function Home() {
           }}
           w="90%"
           mt={{
-            base: "16vh",
-            sm: "16vh",
-            md: "12vh",
-            lg: "12vh",
-            xl: "12vh",
+            base: "110px",
+            sm: "110px",
+            md: "80px",
+            lg: "80px",
+            xl: "80px",
           }}
           gap="3vh"
           align="stretch"
@@ -321,7 +313,7 @@ export default function Home() {
           >
             <Flex
               w={"100%"}
-              p={"2.5vh"}
+              p={"20px"}
               borderRadius={"2vh"}
               bg={"bg.secondary"}
               boxShadow={"0 4px 12px rgba(0, 0, 0, 0.2)"}
@@ -335,7 +327,7 @@ export default function Home() {
                     Current Weather
                   </Text>
 
-                  <Flex w="30vh" direction="row" gap="1vh" align="center">
+                  <Flex w="200px" direction="row" gap="1vh" align="center">
                     <FaLocationDot />
 
                     <ComboBoxDashboard
@@ -346,7 +338,7 @@ export default function Home() {
                 </Flex>
 
                 <Text fontWeight="bold">
-                  {new Date().toLocaleTimeString("id-ID", {
+                  {new Date().toLocaleTimeString("en-US", {
                     hour: "2-digit",
                     minute: "2-digit",
                     hour12: false,
@@ -356,7 +348,7 @@ export default function Home() {
               </Flex>
 
               <Flex direction="row" gap="2vh" align="center">
-                <FaCloudSun size="8vh" />
+                <FaCloudSun size="50px" />
 
                 <Text fontSize="xl">
                   {currentLocationData?.nitrogen_dioxide != null
@@ -368,7 +360,7 @@ export default function Home() {
               </Flex>
 
               <Text fontSize="sm">
-                Data aktual terakhir: {currentLocationData?.time_no2 ?? "-"}
+                Latest actual data: {currentLocationData?.time_no2 ?? "-"}
               </Text>
             </Flex>
 
@@ -420,7 +412,7 @@ export default function Home() {
               />
 
               <MiniCard
-                title="Rain"
+                title="Rainfall"
                 hasil={
                   currentLocationData?.rain != null
                     ? `${Number(currentLocationData.rain).toFixed(2)} mm`
@@ -455,7 +447,7 @@ export default function Home() {
             >
               <Flex w="100%" direction="row" gap="2vh">
                 <MiniCardLocation
-                  location="Jakarta Timur"
+                  location="East Jakarta"
                   hasil={getLocationNO2(1)}
                   lag2={getLocationLAG2(1)}
                   onSelect={() => handleSelectLocation("1")}
@@ -501,7 +493,8 @@ export default function Home() {
           >
             <Flex
               w="100%"
-              p="2.5vh"
+              px={"20px"}
+              py={"18px"}
               boxShadow={"0 4px 12px rgba(0, 0, 0, 0.2)"}
               borderRadius="2vh"
               bg="bg.secondary"
@@ -510,7 +503,7 @@ export default function Home() {
             >
               <Flex pb="0.5vh" borderBottom="1px solid #dfdddd">
                 <Text fontWeight="bold" color="text.fouth">
-                  Prediction Nitrogen Dioxide
+                  Nitrogen Dioxide Prediction
                 </Text>
               </Flex>
 
@@ -567,8 +560,8 @@ export default function Home() {
 
               <Flex direction="row" gap="2vh" justify="space-between">
                 <InputPrediction
-                  title="Rain"
-                  placeholder="Rain..."
+                  title="Rainfall"
+                  placeholder="Rainfall..."
                   value={
                     predictionData?.rain != null
                       ? Number(predictionData.rain).toFixed(2)
@@ -596,8 +589,8 @@ export default function Home() {
                 gap="1vh"
               >
                 <Button
-                  w="15vh"
-                  h="4.5vh"
+                  w="120px"
+                  h="32px"
                   borderRadius="4vh"
                   bg="button.primary"
                   onClick={handleSendPrediction}
@@ -629,7 +622,7 @@ export default function Home() {
               align="stretch"
               minW="0"
             >
-              <Flex flex="1" minW="0" w="100%" h={"40vh"}>
+              <Flex flex="1" minW="0" minH="40vh">
                 <PredictionChart data={predictionData} />
               </Flex>
 
@@ -640,7 +633,7 @@ export default function Home() {
                 }}
                 minW="0"
                 direction="column"
-                p="2.5vh"
+                p="20px"
                 boxShadow={"0 4px 12px rgba(0, 0, 0, 0.2)"}
                 borderRadius="2vh"
                 bg="bg.secondary"
@@ -648,7 +641,7 @@ export default function Home() {
               >
                 <Flex pb="0.5vh" borderBottom="1px solid #dfdddd">
                   <Text fontWeight="bold" color="text.fouth">
-                    Prediction Result
+                    Prediction Results
                   </Text>
                 </Flex>
 
@@ -666,7 +659,7 @@ export default function Home() {
                     }}
                   >
                     <Text fontSize="sm" color="text.thrid">
-                      Prediksi NO₂ Jam:
+                      NO₂ Prediction Time:
                     </Text>
 
                     <Text fontSize="lg" color="text.thrid" fontWeight="bold">
@@ -790,8 +783,8 @@ export default function Home() {
             base: "90%",
             lg: "60%",
           }}
-          py="4vh"
-          px="4vh"
+          py="20px"
+          px="20px"
           gap={{
             base: "2vh",
             md: "3vh",
@@ -824,19 +817,18 @@ export default function Home() {
             </Text>
 
             <Text fontSize="md" textAlign="justify" color="text.thrid">
-              Noxora adalah aplikasi berbasis Progressive Web App (PWA) yang
-              membantu pengguna memprediksi konsentrasi nitrogen dioksida (NO₂)
-              dan memantau kualitas udara di wilayah Jabodetabek. Aplikasi ini
-              menggunakan algoritma XGBoost dan Support Vector Regression (SVR)
-              untuk menghasilkan prediksi konsentrasi NO₂ berdasarkan kondisi
-              lingkungan.
+              Noxora is a Progressive Web App (PWA) that helps users predict
+              nitrogen dioxide (NO₂) concentrations and monitor air quality
+              across the Greater Jakarta area. The application uses the XGBoost
+              and Support Vector Regression (SVR) algorithms to predict NO₂
+              concentrations based on environmental conditions.
             </Text>
 
             <Text fontSize="md" textAlign="justify" color="text.thrid">
-              Pengguna dapat memasukkan parameter lingkungan seperti lokasi,
-              temperatur, kecepatan angin, curah hujan, dan kelembapan relatif.
-              Hasil prediksi kemudian ditampilkan dalam bentuk nilai konsentrasi
-              NO₂ dan grafik sehingga lebih mudah dipahami.
+              Users can select environmental parameters such as location,
+              temperature, wind speed, rainfall, and relative humidity. The
+              prediction results are then displayed as NO₂ concentration values
+              and charts, making them easier to understand.
             </Text>
           </Flex>
 
@@ -871,9 +863,9 @@ export default function Home() {
         </Text>
 
         <Text fontSize="sm" color="text.thrid" textAlign="center">
-          Prediksi Konsentrasi Nitrogen Dioksida (NO₂)
+          Nitrogen Dioxide (NO₂) Concentration Prediction
           <br />
-          Menggunakan XGBoost dan Support Vector Regression
+          Using XGBoost and Support Vector Regression
         </Text>
 
         <Text fontSize="xs" color="text.thrid" mt="1vh">
@@ -884,8 +876,8 @@ export default function Home() {
       {showPredictionPopup && (
         <PopupMini
           title="Prediction"
-          message="Silakan login terlebih dahulu untuk melakukan prediksi."
-          button1="Batal"
+          message="Please log in first to make a prediction."
+          button1="Cancel"
           button2="Login"
           onClick1={() => setShowPredictionPopup(false)}
           onClick2={() => {

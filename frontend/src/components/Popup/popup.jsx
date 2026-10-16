@@ -26,7 +26,8 @@ export const PopupMini = ({
         bg="bg.secondary"
         w={{
           base: "85%",
-          sm: "55vh",
+          sm: "65%",
+          md: "55vh",
         }}
         borderRadius="2vh"
         p="3vh"
@@ -63,7 +64,8 @@ export const PopupMini = ({
           mt="1vh"
         >
           <Button
-            w="12vh"
+            w="90px"
+            h="32px"
             borderRadius="10vh"
             bg="gray.200"
             color="black"
@@ -76,7 +78,8 @@ export const PopupMini = ({
           </Button>
 
           <Button
-            w="12vh"
+            w="90px"
+            h="32px"
             borderRadius="10vh"
             bg="button.thirth"
             _hover={{
@@ -116,7 +119,8 @@ export const PopupMini2 = ({
         bg="bg.secondary"
         w={{
           base: "85%",
-          sm: "55vh",
+          sm: "65%",
+          md: "55vh",
         }}
         borderRadius="2vh"
         p="3vh"
@@ -153,7 +157,8 @@ export const PopupMini2 = ({
           mt="1vh"
         >
           <Button
-            w="12vh"
+            w="90px"
+            h="32px"
             borderRadius="10vh"
             bg="button.thirth"
             color="text.fifth"
