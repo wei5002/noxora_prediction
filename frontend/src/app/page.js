@@ -278,7 +278,7 @@ export default function Home() {
         direction={"column"}
         w={"100%"}
         align={"center"}
-        gap={{ base: "4vh", lg: "5vh" }}
+        gap={{ base: "20px", lg: "20px" }}
         py={"4vh"}
       >
         <Flex
@@ -297,7 +297,7 @@ export default function Home() {
             lg: "80px",
             xl: "80px",
           }}
-          gap="3vh"
+          gap="17px"
           align="stretch"
         >
           <Flex
@@ -309,7 +309,7 @@ export default function Home() {
               xl: "50%",
             }}
             direction="column"
-            gap="2vh"
+            gap="17px"
           >
             <Flex
               w={"100%"}
@@ -318,7 +318,7 @@ export default function Home() {
               bg={"bg.secondary"}
               boxShadow={"0 4px 12px rgba(0, 0, 0, 0.2)"}
               direction={"column"}
-              gap="2vh"
+              gap="17px"
               justify="space-between"
             >
               <Flex direction="column">
@@ -347,7 +347,7 @@ export default function Home() {
                 </Text>
               </Flex>
 
-              <Flex direction="row" gap="2vh" align="center">
+              <Flex direction="row" gap="17px" align="center">
                 <FaCloudSun size="50px" />
 
                 <Text fontSize="xl">
@@ -371,7 +371,7 @@ export default function Home() {
                 sm: "repeat(2, 1fr)",
                 md: "repeat(3, 1fr)",
               }}
-              gap="2vh"
+              gap="17px"
             >
               <MiniCard
                 title="Location"
@@ -434,7 +434,7 @@ export default function Home() {
 
             <Flex
               w="100%"
-              gap="2vh"
+              gap="17px"
               flex="1"
               align="stretch"
               direction={{
@@ -445,7 +445,7 @@ export default function Home() {
                 xl: "row",
               }}
             >
-              <Flex w="100%" direction="row" gap="2vh">
+              <Flex w="100%" direction="row" gap="17px">
                 <MiniCardLocation
                   location="Jakarta Timur"
                   hasil={getLocationNO2(1)}
@@ -461,7 +461,7 @@ export default function Home() {
                 />
               </Flex>
 
-              <Flex w="100%" direction="row" gap="2vh">
+              <Flex w="100%" direction="row" gap="17px">
                 <MiniCardLocation
                   location="Tangerang"
                   hasil={getLocationNO2(6)}
@@ -488,7 +488,7 @@ export default function Home() {
               xl: "50%",
             }}
             direction="column"
-            gap="2vh"
+            gap="17px"
             minW="0"
           >
             <Flex
@@ -498,7 +498,7 @@ export default function Home() {
               boxShadow={"0 4px 12px rgba(0, 0, 0, 0.2)"}
               borderRadius="2vh"
               bg="bg.secondary"
-              gap="2vh"
+              gap="17px"
               direction="column"
             >
               <Flex pb="0.5vh" borderBottom="1px solid #dfdddd">
@@ -512,7 +512,7 @@ export default function Home() {
                   base: "column",
                   md: "row",
                 }}
-                gap="2vh"
+                gap="17px"
                 justify="space-between"
               >
                 <Flex
@@ -533,7 +533,7 @@ export default function Home() {
                   />
                 </Flex>
 
-                <Flex w="100%" gap="2vh">
+                <Flex w="100%" gap="17px">
                   <InputPrediction
                     title="Temperature"
                     placeholder="Temperature..."
@@ -558,7 +558,7 @@ export default function Home() {
                 </Flex>
               </Flex>
 
-              <Flex direction="row" gap="2vh" justify="space-between">
+              <Flex direction="row" gap="17px" justify="space-between">
                 <InputPrediction
                   title="Rainfall"
                   placeholder="Rainfall..."
@@ -586,7 +586,7 @@ export default function Home() {
                 justify="center"
                 align="center"
                 direction="column"
-                gap="1vh"
+                gap="5px"
               >
                 <Button
                   w="120px"
@@ -618,7 +618,7 @@ export default function Home() {
                 sm: "column",
                 md: "row",
               }}
-              gap="2vh"
+              gap="17px"
               align="stretch"
               minW="0"
             >
@@ -637,7 +637,7 @@ export default function Home() {
                 boxShadow={"0 4px 12px rgba(0, 0, 0, 0.2)"}
                 borderRadius="2vh"
                 bg="bg.secondary"
-                gap="2vh"
+                gap="17px"
               >
                 <Flex pb="0.5vh" borderBottom="1px solid #dfdddd">
                   <Text fontWeight="bold" color="text.fouth">
@@ -645,14 +645,14 @@ export default function Home() {
                   </Text>
                 </Flex>
 
-                <Flex w="100%" direction="column" gap="1vh">
+                <Flex w="100%" direction="column" gap="5px">
                   <Flex
                     direction={{
                       base: "column",
                       sm: "column",
                       md: "row",
                     }}
-                    gap="1vh"
+                    gap="5px"
                     align={{
                       base: "flex-start",
                       md: "center",
@@ -667,7 +667,7 @@ export default function Home() {
                     </Text>
                   </Flex>
 
-                  <Flex w="100%" direction="column" gap="2vh" mt="1.5vh">
+                  <Flex w="100%" direction="column" gap="17px" mt="1.5vh">
                     <Flex
                       w="100%"
                       flex="1"
@@ -681,7 +681,7 @@ export default function Home() {
                         w="100%"
                         justify="space-between"
                         align="center"
-                        gap="1vh"
+                        gap="5px"
                         direction="row"
                       >
                         <Text
@@ -694,7 +694,7 @@ export default function Home() {
 
                         <Flex
                           direction="row"
-                          gap="1vh"
+                          gap="5px"
                           align="center"
                           justify="center"
                         >
@@ -733,7 +733,7 @@ export default function Home() {
                         w="100%"
                         justify="space-between"
                         align="center"
-                        gap="1vh"
+                        gap="5px"
                         direction="row"
                       >
                         <Text
@@ -746,7 +746,7 @@ export default function Home() {
 
                         <Flex
                           direction="row"
-                          gap="1vh"
+                          gap="5px"
                           align="center"
                           justify="center"
                         >
@@ -842,7 +842,7 @@ export default function Home() {
             align="center"
             justify="center"
           >
-            <RiCloudWindyFill size="30vh" />
+            <RiCloudWindyFill size={"200px"} />
           </Flex>
         </Flex>
       </Flex>
@@ -855,7 +855,7 @@ export default function Home() {
         bg="bg.secondary"
         direction="column"
         align="center"
-        gap="1vh"
+        gap="5px"
         borderTop="1px solid #e7e7e7"
       >
         <Text fontSize="xl" fontWeight="bold" color="text.fouth">
