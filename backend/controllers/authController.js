@@ -1,18 +1,18 @@
 import bcrypt from "bcrypt";
 import pool from "../db.js";
 
-// REGISTRASI
+// REGISTRATION
 export const register = async (req, res) => {
   try {
     const { username, email, phoneNumber, password, confirmPassword } =
       req.body;
 
-    // Normalisasi data
+    // Normalize input data
     const normalizedUsername = username?.trim().toLowerCase();
     const normalizedEmail = email?.trim().toLowerCase();
     const normalizedPhoneNumber = phoneNumber?.trim();
 
-    // Cek data wajib
+    // Validate required fields
     if (
       !normalizedUsername ||
       !normalizedEmail ||
@@ -20,48 +20,48 @@ export const register = async (req, res) => {
       !confirmPassword
     ) {
       return res.status(400).json({
-        message: "Data registrasi belum lengkap",
+        message: "Registration information is incomplete",
       });
     }
 
-    // Cek username minimal 6 karakter
+    // Validate minimum username length
     if (normalizedUsername.length < 6) {
       return res.status(400).json({
-        message: "Username minimal 6 karakter",
+        message: "Username must be at least 6 characters long",
       });
     }
 
-    // Cek format email
+    // Validate email format
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
     if (!emailRegex.test(normalizedEmail)) {
       return res.status(400).json({
-        message: "Format email tidak valid",
+        message: "Invalid email format",
       });
     }
 
-    // Cek nomor telepon
+    // Validate phone number
     if (normalizedPhoneNumber && !/^\d+$/.test(normalizedPhoneNumber)) {
       return res.status(400).json({
-        message: "Nomor telepon hanya boleh berisi angka",
+        message: "Phone number must contain digits only",
       });
     }
 
-    // Password minimal 8 karakter
+    // Validate minimum password length
     if (password.length < 8) {
       return res.status(400).json({
-        message: "Password minimal 8 karakter",
+        message: "Password must be at least 8 characters long",
       });
     }
 
-    // Cek konfirmasi password
+    // Validate password confirmation
     if (password !== confirmPassword) {
       return res.status(400).json({
-        message: "Password dan konfirmasi password tidak sama",
+        message: "Password and password confirmation do not match",
       });
     }
 
-    // Cek username atau email sudah terdaftar
+    // Check whether the username or email is already registered
     const existingUser = await pool.query(
       `SELECT user_id, username, email
        FROM users
@@ -74,21 +74,21 @@ export const register = async (req, res) => {
 
       if (user.username === normalizedUsername) {
         return res.status(409).json({
-          message: "Username sudah terdaftar",
+          message: "Username is already registered",
         });
       }
 
       if (user.email === normalizedEmail) {
         return res.status(409).json({
-          message: "Email sudah terdaftar",
+          message: "Email is already registered",
         });
       }
     }
 
-    // Hash password
+    // Hash the password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Simpan user
+    // Save the new user
     const result = await pool.query(
       `INSERT INTO users
         (username, email, "phoneNumber", password)
@@ -103,14 +103,14 @@ export const register = async (req, res) => {
     );
 
     res.status(201).json({
-      message: "Registrasi berhasil",
+      message: "Registration successful",
       user: result.rows[0],
     });
   } catch (error) {
     console.error(error);
 
     res.status(500).json({
-      message: "Terjadi kesalahan pada server",
+      message: "An internal server error occurred",
     });
   }
 };
@@ -120,26 +120,26 @@ export const login = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // Cek data wajib
+    // Validate required fields
     if (!email || !password) {
       return res.status(400).json({
-        message: "Email dan password wajib diisi",
+        message: "Email and password are required",
       });
     }
 
-    // Normalisasi email
+    // Normalize email
     const normalizedEmail = email.trim().toLowerCase();
 
-    // Cek format email
+    // Validate email format
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
     if (!emailRegex.test(normalizedEmail)) {
       return res.status(400).json({
-        message: "Format email tidak valid",
+        message: "Invalid email format",
       });
     }
 
-    // Cari user berdasarkan email
+    // Find the user by email
     const result = await pool.query(
       `SELECT user_id, username, email, "phoneNumber", password
        FROM users
@@ -147,27 +147,27 @@ export const login = async (req, res) => {
       [normalizedEmail],
     );
 
-    // User tidak ditemukan
+    // Check whether the user exists
     if (result.rows.length === 0) {
       return res.status(401).json({
-        message: "Email atau password salah",
+        message: "Invalid email or password",
       });
     }
 
     const user = result.rows[0];
 
-    // Cek password
+    // Validate password
     const isPasswordValid = await bcrypt.compare(password, user.password);
 
     if (!isPasswordValid) {
       return res.status(401).json({
-        message: "Email atau password salah",
+        message: "Invalid email or password",
       });
     }
 
-    // Login berhasil
+    // Login successful
     res.status(200).json({
-      message: "Login berhasil",
+      message: "Login successful",
       user: {
         user_id: user.user_id,
         username: user.username,
@@ -179,7 +179,7 @@ export const login = async (req, res) => {
     console.error("Login Error:", error);
 
     res.status(500).json({
-      message: "Terjadi kesalahan pada server",
+      message: "An internal server error occurred",
     });
   }
 };

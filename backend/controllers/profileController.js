@@ -12,22 +12,22 @@ export const getProfile = async (req, res) => {
       [user_id],
     );
 
-    // User tidak ditemukan
+    // Check whether the user exists
     if (result.rows.length === 0) {
       return res.status(404).json({
-        message: "User tidak ditemukan",
+        message: "User not found",
       });
     }
 
     res.status(200).json({
-      message: "Data profile berhasil diambil",
+      message: "Profile data retrieved successfully",
       user: result.rows[0],
     });
   } catch (error) {
     console.error(error);
 
     res.status(500).json({
-      message: "Terjadi kesalahan pada server",
+      message: "An internal server error occurred",
     });
   }
 };
@@ -38,14 +38,14 @@ export const updateProfile = async (req, res) => {
     const { user_id } = req.params;
     const { username, email, phoneNumber } = req.body;
 
-    // Cek data wajib
+    // Validate required fields
     if (!username || !email) {
       return res.status(400).json({
-        message: "Username dan email wajib diisi",
+        message: "Username and email are required",
       });
     }
 
-    // Cek user
+    // Check whether the user exists
     const userResult = await pool.query(
       `SELECT user_id
        FROM users
@@ -55,11 +55,11 @@ export const updateProfile = async (req, res) => {
 
     if (userResult.rows.length === 0) {
       return res.status(404).json({
-        message: "User tidak ditemukan",
+        message: "User not found",
       });
     }
 
-    // Cek username atau email sudah digunakan user lain
+    // Check whether the username or email is already used by another user
     const existingUser = await pool.query(
       `SELECT user_id, username, email
        FROM users
@@ -73,18 +73,18 @@ export const updateProfile = async (req, res) => {
 
       if (user.username === username) {
         return res.status(409).json({
-          message: "Username sudah digunakan",
+          message: "Username is already taken",
         });
       }
 
       if (user.email === email) {
         return res.status(409).json({
-          message: "Email sudah digunakan",
+          message: "Email is already in use",
         });
       }
     }
 
-    // Update profile
+    // Update the profile
     const result = await pool.query(
       `UPDATE users
        SET username = $1,
@@ -96,14 +96,14 @@ export const updateProfile = async (req, res) => {
     );
 
     res.status(200).json({
-      message: "Profile berhasil diperbarui",
+      message: "Profile updated successfully",
       user: result.rows[0],
     });
   } catch (error) {
     console.error(error);
 
     res.status(500).json({
-      message: "Terjadi kesalahan pada server",
+      message: "An internal server error occurred",
     });
   }
 };
@@ -113,7 +113,7 @@ export const deleteAccount = async (req, res) => {
   try {
     const { user_id } = req.params;
 
-    // Cek user
+    // Check whether the user exists
     const userResult = await pool.query(
       `SELECT user_id
        FROM users
@@ -123,11 +123,11 @@ export const deleteAccount = async (req, res) => {
 
     if (userResult.rows.length === 0) {
       return res.status(404).json({
-        message: "User tidak ditemukan",
+        message: "User not found",
       });
     }
 
-    // Hapus user
+    // Delete the user account
     await pool.query(
       `DELETE FROM users
        WHERE user_id = $1`,
@@ -135,13 +135,13 @@ export const deleteAccount = async (req, res) => {
     );
 
     res.status(200).json({
-      message: "Akun berhasil dihapus",
+      message: "Account deleted successfully",
     });
   } catch (error) {
     console.error(error);
 
     res.status(500).json({
-      message: "Terjadi kesalahan pada server",
+      message: "An internal server error occurred",
     });
   }
 };

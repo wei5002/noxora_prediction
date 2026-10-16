@@ -9,28 +9,28 @@ export const changePassword = async (req, res) => {
     const { user_id } = req.params;
     const { newPassword, confirmPassword } = req.body;
 
-    // Cek data wajib
+    // Validate required fields
     if (!newPassword || !confirmPassword) {
       return res.status(400).json({
-        message: "Password baru dan konfirmasi password wajib diisi",
+        message: "New password and password confirmation are required",
       });
     }
 
-    // Password minimal 8 karakter
+    // Validate minimum password length
     if (newPassword.length < 8) {
       return res.status(400).json({
-        message: "Password baru minimal 8 karakter",
+        message: "New password must be at least 8 characters long",
       });
     }
 
-    // Cek konfirmasi password
+    // Validate password confirmation
     if (newPassword !== confirmPassword) {
       return res.status(400).json({
-        message: "Password baru dan konfirmasi password tidak sama",
+        message: "New password and password confirmation do not match",
       });
     }
 
-    // Ambil password lama dari database
+    // Retrieve the current password from the database
     const result = await pool.query(
       `SELECT password
        FROM users
@@ -40,25 +40,25 @@ export const changePassword = async (req, res) => {
 
     if (result.rows.length === 0) {
       return res.status(404).json({
-        message: "User tidak ditemukan",
+        message: "User not found",
       });
     }
 
     const user = result.rows[0];
 
-    // Cek apakah password baru sama dengan password sebelumnya
+    // Check whether the new password matches the current password
     const isSamePassword = await bcrypt.compare(newPassword, user.password);
 
     if (isSamePassword) {
       return res.status(400).json({
-        message: "Password baru tidak boleh sama dengan password sebelumnya",
+        message: "New password must be different from the current password",
       });
     }
 
-    // Hash password baru
+    // Hash the new password
     const hashedPassword = await bcrypt.hash(newPassword, 10);
 
-    // Update password
+    // Update the password
     await pool.query(
       `UPDATE users
        SET password = $1
@@ -67,13 +67,13 @@ export const changePassword = async (req, res) => {
     );
 
     res.status(200).json({
-      message: "Password berhasil diubah",
+      message: "Password changed successfully",
     });
   } catch (error) {
     console.error(error);
 
     res.status(500).json({
-      message: "Terjadi kesalahan pada server",
+      message: "An internal server error occurred",
     });
   }
 };
@@ -83,16 +83,16 @@ export const forgotPassword = async (req, res) => {
   try {
     const { email } = req.body;
 
-    // Cek email
+    // Validate email
     if (!email) {
       return res.status(400).json({
-        message: "Email wajib diisi",
+        message: "Email is required",
       });
     }
 
     const normalizedEmail = email.trim().toLowerCase();
 
-    // Cari user
+    // Find the user
     const result = await pool.query(
       `SELECT user_id, email
        FROM users
@@ -100,29 +100,29 @@ export const forgotPassword = async (req, res) => {
       [normalizedEmail],
     );
 
-    // Email tidak ditemukan
+    // Check whether the email exists
     if (result.rows.length === 0) {
       return res.status(404).json({
-        message: "Email tidak terdaftar",
+        message: "Email address is not registered",
       });
     }
 
     const user = result.rows[0];
 
-    // Buat token
+    // Generate a reset token
     const token = crypto.randomBytes(32).toString("hex");
 
-    // Token berlaku 1 jam
+    // Set the token expiration time to one hour
     const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
 
-    // Hapus token lama
+    // Delete any existing reset tokens
     await pool.query(
       `DELETE FROM password_reset_tokens
        WHERE user_id = $1`,
       [user.user_id],
     );
 
-    // Simpan token baru
+    // Store the new reset token
     await pool.query(
       `INSERT INTO password_reset_tokens
        (user_id, token, expires_at)
@@ -130,20 +130,21 @@ export const forgotPassword = async (req, res) => {
       [user.user_id, token, expiresAt],
     );
 
-    // Link reset password
+    // Generate the password reset link
     const resetLink = `${process.env.FRONTEND_URL}/ChangePassword?token=${token}`;
 
-    // Kirim email
+    // Send the password reset email
     await sendResetPasswordEmail(user.email, resetLink);
 
     res.status(200).json({
-      message: "Link reset password berhasil dikirim ke email",
+      message: "Password reset link has been sent to your email",
     });
   } catch (error) {
-    console.error("Forgot Password Error:", error);
+    console.error("FORGOT PASSWORD ERROR:", error);
 
-    res.status(500).json({
-      message: "Gagal mengirim email reset password",
+    return res.status(500).json({
+      success: false,
+      message: "Failed to process the password reset request",
     });
   }
 };
@@ -153,28 +154,28 @@ export const resetPassword = async (req, res) => {
   try {
     const { token, newPassword, confirmPassword } = req.body;
 
-    // Cek data wajib
+    // Validate required fields
     if (!token || !newPassword || !confirmPassword) {
       return res.status(400).json({
-        message: "Data reset password belum lengkap",
+        message: "Required password reset information is incomplete",
       });
     }
 
-    // Password minimal 8 karakter
+    // Validate minimum password length
     if (newPassword.length < 8) {
       return res.status(400).json({
-        message: "Password minimal 8 karakter",
+        message: "Password must be at least 8 characters long",
       });
     }
 
-    // Cek konfirmasi password
+    // Validate password confirmation
     if (newPassword !== confirmPassword) {
       return res.status(400).json({
-        message: "Password dan konfirmasi password tidak sama",
+        message: "Password and password confirmation do not match",
       });
     }
 
-    // Cari token
+    // Find the reset token
     const result = await pool.query(
       `SELECT id, user_id, expires_at
        FROM password_reset_tokens
@@ -182,16 +183,16 @@ export const resetPassword = async (req, res) => {
       [token],
     );
 
-    // Token tidak ditemukan
+    // Check whether the token exists
     if (result.rows.length === 0) {
       return res.status(400).json({
-        message: "Token reset password tidak valid",
+        message: "Invalid password reset token",
       });
     }
 
     const resetToken = result.rows[0];
 
-    // Cek token expired
+    // Check whether the token has expired
     if (new Date() > new Date(resetToken.expires_at)) {
       await pool.query(
         `DELETE FROM password_reset_tokens
@@ -200,14 +201,14 @@ export const resetPassword = async (req, res) => {
       );
 
       return res.status(400).json({
-        message: "Token reset password sudah kedaluwarsa",
+        message: "Password reset token has expired",
       });
     }
 
-    // Hash password baru
+    // Hash the new password
     const hashedPassword = await bcrypt.hash(newPassword, 10);
 
-    // Update password
+    // Update the user's password
     await pool.query(
       `UPDATE users
        SET password = $1
@@ -215,7 +216,7 @@ export const resetPassword = async (req, res) => {
       [hashedPassword, resetToken.user_id],
     );
 
-    // Hapus token setelah digunakan
+    // Delete the token after it has been used
     await pool.query(
       `DELETE FROM password_reset_tokens
        WHERE id = $1`,
@@ -223,13 +224,13 @@ export const resetPassword = async (req, res) => {
     );
 
     res.status(200).json({
-      message: "Password berhasil direset",
+      message: "Password has been reset successfully",
     });
   } catch (error) {
     console.error(error);
 
     res.status(500).json({
-      message: "Terjadi kesalahan pada server",
+      message: "An internal server error occurred",
     });
   }
 };

@@ -7,7 +7,8 @@ import { PopupMini2 } from "../../components/Popup/popup";
 
 export default function ForgotPassword() {
   const router = useRouter();
-  const API_URL = process.env.NEXT_PUBLIC_API_URL;
+  const API_URL =
+    process.env.NEXT_PUBLIC_API_URL || "https://noxora-backend.vercel.app";
 
   const [email, setEmail] = useState("");
   const [showPopup, setShowPopup] = useState(false);

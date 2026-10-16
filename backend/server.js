@@ -17,15 +17,11 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// PATH
-
+// PATHS
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
 const ML_DIR = path.join(__dirname, "..", "ml");
-
 const REALTIME_CSV = path.join(ML_DIR, "data", "api", "realtime_api.csv");
-
 const SVR_PREDICTION_CSV = path.join(
   ML_DIR,
   "results",
@@ -42,35 +38,30 @@ const XGBOOST_PREDICTION_CSV = path.join(
 
 const REFRESH_INTERVAL = 5 * 60 * 1000;
 
-// STATUS PIPELINE
-
+// PIPELINE STATUS
 let lastMLAttemptAt = 0;
 let lastMLSuccessAt = null;
 let lastMLError = null;
 let mlPipelinePromise = null;
 
 // MIDDLEWARE
-
 app.use(cors());
 app.use(express.json());
 
-// HELPER: FORMAT ANGKA
-
+// HELPER: FORMAT NUMBERS
 function toNumber(value) {
   if (value === undefined || value === null || String(value).trim() === "") {
     return null;
   }
-
   const number = Number(value);
-
   return Number.isFinite(number) ? number : null;
 }
 
-// HELPER: MEMBACA CSV
+// HELPER: READ CSV
 
 function readCSV(filePath) {
   if (!fs.existsSync(filePath)) {
-    throw new Error(`File CSV tidak ditemukan: ${filePath}`);
+    throw new Error(`CSV file not found: ${filePath}`);
   }
 
   const content = fs.readFileSync(filePath, "utf8");
@@ -89,7 +80,7 @@ function readCSV(filePath) {
     return [];
   }
 
-  // Parser CSV sederhana yang mendukung koma di dalam tanda kutip.
+  // Simple CSV parser that supports commas inside quoted fields.
   function parseCSVLine(line) {
     const values = [];
     let value = "";
@@ -132,8 +123,7 @@ function readCSV(filePath) {
   });
 }
 
-// HELPER: MEMBACA CSV JIKA TERSEDIA
-
+// HELPER: READ CSV IF AVAILABLE
 function readCSVIfExists(filePath) {
   if (!fs.existsSync(filePath)) {
     return [];
@@ -142,26 +132,24 @@ function readCSVIfExists(filePath) {
   try {
     return readCSV(filePath);
   } catch (error) {
-    console.error(`Gagal membaca ${path.basename(filePath)}:`, error.message);
+    console.error(`Failed to read ${path.basename(filePath)}:`, error.message);
 
     return [];
   }
 }
 
-// HELPER: MENGAMBIL DATA BERDASARKAN LOCATION ID
-
+// HELPER: FIND DATA BY LOCATION ID
 function findByLocation(rows, locationId) {
   return rows.find((row) => Number(row.location_id) === Number(locationId));
 }
 
-// HELPER: MENJALANKAN PYTHON
-
+// HELPER: RUN PYTHON SCRIPT
 function runPythonScript(filename) {
   return new Promise((resolve, reject) => {
     const scriptPath = path.join(ML_DIR, "prediction", filename);
 
     if (!fs.existsSync(scriptPath)) {
-      reject(new Error(`Script Python tidak ditemukan: ${scriptPath}`));
+      reject(new Error(`Python script not found: ${scriptPath}`));
       return;
     }
 
@@ -187,7 +175,7 @@ function runPythonScript(filename) {
 
       settled = true;
 
-      reject(new Error(`${filename} gagal dijalankan: ${error.message}`));
+      reject(new Error(`${filename} failed to execute: ${error.message}`));
     });
 
     python.on("close", (code) => {
@@ -196,10 +184,10 @@ function runPythonScript(filename) {
       settled = true;
 
       if (code === 0) {
-        console.log(`[${filename}] Selesai.`);
+        console.log(`[${filename}] Completed.`);
         resolve();
       } else {
-        reject(new Error(`${filename} gagal dengan exit code ${code}.`));
+        reject(new Error(`${filename} failed with exit code ${code}.`));
       }
     });
   });
@@ -208,9 +196,7 @@ function runPythonScript(filename) {
 // ML PIPELINE
 
 async function runMLPipeline() {
-  console.log("\n====================================");
-  console.log("Memulai pipeline realtime Noxora");
-  console.log("====================================\n");
+  console.log("Starting Noxora realtime pipeline");
 
   try {
     await runPythonScript("fetch_hourly_api.py");
@@ -221,21 +207,21 @@ async function runMLPipeline() {
     lastMLSuccessAt = new Date().toISOString();
     lastMLError = null;
 
-    console.log("Pipeline realtime berhasil.");
+    console.log("Realtime pipeline completed successfully.");
     return true;
   } catch (error) {
     lastMLError = error.message;
 
-    console.error("Pipeline realtime gagal:", error.message);
+    console.error("Realtime pipeline failed:", error.message);
 
     return false;
   }
 }
 
-// REFRESH PIPELINE MAKSIMAL SETIAP 5 MENIT
+// REFRESH PIPELINE AT MOST EVERY 5 MINUTES
 
 async function ensureMLPipeline() {
-  // Jika proses sedang berjalan, tunggu proses yang sama.
+  // Wait for the existing process if it is already running.
   if (mlPipelinePromise) {
     await mlPipelinePromise;
     return;
@@ -243,12 +229,12 @@ async function ensureMLPipeline() {
 
   const now = Date.now();
 
-  // Hindari pemanggilan API berulang.
+  // Prevent repeated API calls.
   if (now - lastMLAttemptAt < REFRESH_INTERVAL) {
     return;
   }
 
-  // Catat percobaan sebelum menjalankan pipeline.
+  // Record the attempt before running the pipeline.
   lastMLAttemptAt = now;
 
   mlPipelinePromise = runMLPipeline();
@@ -260,7 +246,7 @@ async function ensureMLPipeline() {
   }
 }
 
-// HELPER: MENGGABUNGKAN DATA AKTUAL DAN PREDIKSI
+// HELPER: COMBINE ACTUAL DATA AND PREDICTIONS
 
 function buildRealtimeData() {
   const actualRows = readCSVIfExists(REALTIME_CSV);
@@ -274,7 +260,7 @@ function buildRealtimeData() {
     const xgb = findByLocation(xgbRows, locationId);
 
     return {
-      // Identitas lokasi
+      // Location information
       location_id: locationId,
       location_name:
         actual.location_name ||
@@ -282,31 +268,31 @@ function buildRealtimeData() {
         xgb?.location_name ||
         null,
 
-      // Data NO2 aktual
+      // Actual NO2 data
       time_no2: actual.time_no2 || null,
       nitrogen_dioxide: toNumber(actual.nitrogen_dioxide),
 
-      // Data meteorologi aktual
+      // Actual meteorological data
       time_weather: actual.time_weather || null,
       temperature_2m: toNumber(actual.temperature_2m),
       relative_humidity_2m: toNumber(actual.relative_humidity_2m),
       rain: toNumber(actual.rain),
       wind_speed_10m: toNumber(actual.wind_speed_10m),
 
-      // Waktu prediksi
+      // Prediction timestamps
       fetched_at: svr?.fetched_at || xgb?.fetched_at || null,
       target_time: svr?.target_time || xgb?.target_time || null,
       weather_time: svr?.weather_time || xgb?.weather_time || null,
 
-      // Lag untuk grafik dan fitur model
+      // Lag features for charts and model inputs
       LAG1: toNumber(svr?.LAG1 ?? actual.LAG1),
       LAG2: toNumber(svr?.LAG2 ?? actual.LAG2),
       LAG3: toNumber(svr?.LAG3 ?? actual.LAG3),
 
-      // Prediksi SVR
+      // SVR prediction
       predicted_nitrogen_dioxide: toNumber(svr?.predicted_nitrogen_dioxide),
 
-      // Prediksi XGBoost
+      // XGBoost prediction
       predicted_nitrogen_dioxide_xgboost: toNumber(
         xgb?.predicted_nitrogen_dioxide,
       ),
@@ -314,24 +300,22 @@ function buildRealtimeData() {
   });
 }
 
-// TEST BACKEND
-
+// BACKEND HEALTH CHECK
 app.get("/", (req, res) => {
   res.json({
     success: true,
-    message: "Backend Noxora berhasil berjalan!",
+    message: "Noxora backend is running successfully!",
   });
 });
 
-// TEST DATABASE
-
+// DATABASE CONNECTION TEST
 app.get("/test-db", async (req, res) => {
   try {
     const result = await pool.query("SELECT NOW()");
 
     res.json({
       success: true,
-      message: "Database berhasil terhubung!",
+      message: "Database connection successful!",
       time: result.rows[0],
     });
   } catch (error) {
@@ -339,13 +323,13 @@ app.get("/test-db", async (req, res) => {
 
     res.status(500).json({
       success: false,
-      message: "Database gagal terhubung.",
+      message: "Database connection failed.",
       error: error.message,
     });
   }
 });
 
-// STATUS PIPELINE
+// PIPELINE STATUS
 
 app.get("/api/ml/status", (req, res) => {
   res.json({
@@ -363,8 +347,8 @@ app.get("/api/ml/status", (req, res) => {
   });
 });
 
-// REALTIME SEMUA LOKASI
-// Mengembalikan data aktual dan LAG
+// REALTIME DATA FOR ALL LOCATIONS
+// Returns actual data and lag features
 
 app.get("/api/realtime-all", async (req, res) => {
   try {
@@ -373,7 +357,7 @@ app.get("/api/realtime-all", async (req, res) => {
     if (!fs.existsSync(REALTIME_CSV)) {
       return res.status(503).json({
         success: false,
-        message: "Data realtime belum tersedia.",
+        message: "Realtime data is not available yet.",
         error: lastMLError,
       });
     }
@@ -382,33 +366,33 @@ app.get("/api/realtime-all", async (req, res) => {
 
     return res.json(data);
   } catch (error) {
-    console.error("Gagal membaca data realtime:", error.message);
+    console.error("Failed to read realtime data:", error.message);
 
     return res.status(500).json({
       success: false,
-      message: "Gagal membaca data realtime.",
+      message: "Failed to read realtime data.",
       error: error.message,
     });
   }
 });
 
-// REALTIME + PREDIKSI SEMUA LOKASI
-// Endpoint yang digunakan frontend Home
+// REALTIME DATA AND PREDICTIONS FOR ALL LOCATIONS
+// Endpoint used by the frontend Home page
 
 app.get("/api/ml/realtime", (req, res) => {
   try {
-    // Baca data aktual yang terakhir berhasil disimpan.
+    // Read the most recently saved actual data.
     const actualRows = readCSVIfExists(REALTIME_CSV);
 
     if (actualRows.length === 0) {
       return res.status(503).json({
         success: false,
-        message: "Data realtime belum tersedia.",
+        message: "Realtime data is not available yet.",
         error: lastMLError,
       });
     }
 
-    // File prediksi boleh belum tersedia.
+    // Prediction files may not be available yet.
     const svrRows = readCSVIfExists(SVR_PREDICTION_CSV);
     const xgbRows = readCSVIfExists(XGBOOST_PREDICTION_CSV);
 
@@ -453,11 +437,11 @@ app.get("/api/ml/realtime", (req, res) => {
       last_error: lastMLError,
     });
   } catch (error) {
-    console.error("Gagal mengambil data realtime gabungan:", error.message);
+    console.error("Failed to retrieve combined realtime data:", error.message);
 
     return res.status(500).json({
       success: false,
-      message: "Gagal mengambil data realtime.",
+      message: "Failed to retrieve realtime data.",
       error: error.message,
     });
   }
@@ -471,7 +455,7 @@ app.get("/api/realtime", async (req, res) => {
     if (!Number.isInteger(locationId) || locationId < 1 || locationId > 10) {
       return res.status(400).json({
         success: false,
-        message: "location_id harus berupa angka 1 sampai 10.",
+        message: "location_id must be a number between 1 and 10.",
       });
     }
 
@@ -485,7 +469,7 @@ app.get("/api/realtime", async (req, res) => {
       if (!result) {
         return res.status(404).json({
           success: false,
-          message: "Data lokasi tidak ditemukan.",
+          message: "Location data not found.",
         });
       }
 
@@ -495,7 +479,7 @@ app.get("/api/realtime", async (req, res) => {
     if (!fs.existsSync(REALTIME_CSV)) {
       return res.status(503).json({
         success: false,
-        message: "Data realtime belum tersedia.",
+        message: "Realtime data is not available yet.",
         error: lastMLError,
       });
     }
@@ -506,24 +490,26 @@ app.get("/api/realtime", async (req, res) => {
     if (!result) {
       return res.status(404).json({
         success: false,
-        message: "Data realtime untuk lokasi tidak ditemukan.",
+        message: "Realtime data for this location was not found.",
       });
     }
 
     return res.json(result);
   } catch (error) {
-    console.error("Gagal mengambil data realtime/prediksi:", error.message);
+    console.error(
+      "Failed to retrieve realtime data/predictions:",
+      error.message,
+    );
 
     return res.status(500).json({
       success: false,
-      message: "Gagal mengambil data realtime/prediksi.",
+      message: "Failed to retrieve realtime data/predictions.",
       error: error.message,
     });
   }
 });
 
-// PREDICTIONS SEMUA LOKASI
-// Mempertahankan endpoint lama
+// PREDICTIONS FOR ALL LOCATIONS
 
 app.get("/api/predictions", async (req, res) => {
   try {
@@ -534,42 +520,27 @@ app.get("/api/predictions", async (req, res) => {
     if (data.length === 0) {
       return res.status(503).json({
         success: false,
-        message: "Data prediksi belum tersedia.",
+        message: "Prediction data is not available yet.",
         error: lastMLError,
       });
     }
 
-    // Format array dipertahankan untuk kompatibilitas
-    // dengan frontend yang menggunakan endpoint lama.
     return res.json(data);
   } catch (error) {
-    console.error("Gagal membaca data prediksi:", error.message);
+    console.error("Failed to read prediction data:", error.message);
 
     return res.status(500).json({
       success: false,
-      message: "Gagal membaca data prediksi.",
+      message: "Failed to read prediction data.",
       error: error.message,
     });
   }
 });
 
-// ROUTES AUTENTIKASI, PROFIL, DAN PASSWORD
-
+// AUTHENTICATION, PROFILE, AND PASSWORD ROUTES
 app.use("/", authRoutes);
 app.use("/", profileRoutes);
 app.use("/", passwordRoutes);
 
-// START SERVER
-// app.listen(PORT, () => {
-//   console.log(`Backend berjalan di http://localhost:${PORT}`);
-
-//   // Percobaan pertama dilakukan saat server mulai.
-//   // ensureMLPipeline membatasi percobaan berikutnya
-//   // berdasarkan interval refresh.
-//   ensureMLPipeline().catch((error) => {
-//     console.error("Gagal menjalankan pipeline saat startup:", error.message);
-//   });
-// });
-
-// EXPORT APLIKASI
+// EXPORT APPLICATION
 export default app;
