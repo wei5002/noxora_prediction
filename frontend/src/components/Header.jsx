@@ -227,8 +227,8 @@ export default function Header() {
           }}
           direction="row"
           gap={{
-            base: "1vh",
-            md: "1.5vh",
+            base: "8px",
+            md: "8px",
           }}
           flexShrink={0}
         >

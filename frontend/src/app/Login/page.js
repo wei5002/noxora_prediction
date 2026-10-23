@@ -54,7 +54,7 @@ export default function Login() {
   };
 
   return (
-    <Flex w="100%" minH="100vh" justify="center" align="center">
+    <Flex w="100%" h="100vh" justify="center" align="center">
       <Flex
         boxShadow="0 4px 12px rgba(0, 0, 0, 0.2)"
         bg={"bg.secondary"}
