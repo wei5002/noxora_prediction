@@ -3,6 +3,7 @@ import { Flex } from "@chakra-ui/react";
 import { Provider } from "@/components/ui/provider";
 import { Toaster } from "@/components/ui/toaster";
 import Header from "../components/Header";
+import ServiceWorkerRegister from "../components/ServiceWorkerRegister";
 
 export const metadata = {
   title: "Noxora",
@@ -22,6 +23,7 @@ export default function RootLayout({ children }) {
             align="center"
             bg="bg.primary"
           >
+             <ServiceWorkerRegister />
             <Header />
 
             {children}

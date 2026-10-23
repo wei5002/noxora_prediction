@@ -17,6 +17,11 @@ import { PopupMini } from "../components/Popup/popup";
 export default function Home() {
   const router = useRouter();
 
+  const STORAGE_KEYS = {
+    locations: "noxora_last_locations",
+    prediction: "noxora_last_prediction",
+  };
+
   const [predictionData, setPredictionData] = useState(null);
   const [selectedLocation, setSelectedLocation] = useState("1");
   const [selectedPredictionLocation, setSelectedPredictionLocation] =
@@ -26,6 +31,27 @@ export default function Home() {
   const [showPredictionPopup, setShowPredictionPopup] = useState(false);
   // const [currentLocationData, setCurrentLocationData] = useState(null);
   const [allLocations, setAllLocations] = useState([]);
+
+  useEffect(() => {
+    try {
+      const savedLocations = localStorage.getItem(STORAGE_KEYS.locations);
+      const savedPrediction = localStorage.getItem(STORAGE_KEYS.prediction);
+
+      if (savedLocations) {
+        const parsedLocations = JSON.parse(savedLocations);
+
+        if (Array.isArray(parsedLocations)) {
+          setAllLocations(parsedLocations);
+        }
+      }
+
+      if (savedPrediction) {
+        setPredictionData(JSON.parse(savedPrediction));
+      }
+    } catch (err) {
+      console.error("Failed to restore Noxora data:", err);
+    }
+  }, []);
 
   const locationNames = {
     1: "Jakarta Timur",
@@ -163,7 +189,7 @@ export default function Home() {
         return `${h}:${m}`;
       });
 
-      setPredictionData({
+      const newPredictionData = {
         location_id: selectedData.location_id,
         target_time: selectedData.target_time,
 
@@ -179,7 +205,18 @@ export default function Home() {
         svrChartSeries,
         xgboostChartSeries,
         chartCategories,
-      });
+      };
+
+      setPredictionData(newPredictionData);
+
+      try {
+        localStorage.setItem(
+          STORAGE_KEYS.prediction,
+          JSON.stringify(newPredictionData),
+        );
+      } catch (err) {
+        console.error("Failed to save prediction results:", err);
+      }
     } catch (err) {
       console.error("Failed to display prediction:", err);
 
@@ -239,13 +276,26 @@ export default function Home() {
           );
         }
 
-        if (!result?.success || !Array.isArray(result.data)) {
+        if (
+          !result?.success ||
+          !Array.isArray(result.data) ||
+          result.data.length === 0
+        ) {
           throw new Error("Real-time data is not available.");
         }
 
         if (cancelled) return;
 
         setAllLocations(result.data);
+
+        try {
+          localStorage.setItem(
+            STORAGE_KEYS.locations,
+            JSON.stringify(result.data),
+          );
+        } catch (err) {
+          console.error("Failed to save real-time data:", err);
+        }
       } catch (err) {
         if (cancelled || err.name === "AbortError") return;
 
