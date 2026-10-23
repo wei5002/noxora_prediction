@@ -7,6 +7,8 @@ import {
   useListCollection,
 } from "@chakra-ui/react";
 
+import { useState } from "react";
+
 export const LOCATION_OPTIONS = [
   { label: "Jakarta Timur", value: "1" },
   { label: "Kepulauan Seribu", value: "2" },
@@ -24,6 +26,7 @@ export const ComboBoxDashboard = ({
   value,
   onValueChange,
   placeholder = "Search Location...",
+  ...props
 }) => {
   const { contains } = useFilter({
     sensitivity: "base",
@@ -34,40 +37,53 @@ export const ComboBoxDashboard = ({
     filter: contains,
   });
 
+  const selectedItem = LOCATION_OPTIONS.find(
+    (item) => item.value === String(value ?? ""),
+  );
+
+  const [inputValue, setInputValue] = useState(
+    selectedItem?.label ?? "",
+  );
+
   const handleInputChange = (details) => {
+    setInputValue(details.inputValue);
     filter(details.inputValue);
   };
 
   const handleValueChange = (details) => {
     const selectedValue = details.value[0] ?? "";
 
+    const selected = LOCATION_OPTIONS.find(
+      (item) => item.value === selectedValue,
+    );
+
+    setInputValue(selected?.label ?? "");
     reset();
+
     onValueChange?.(selectedValue);
   };
-
-  const selectedItem = LOCATION_OPTIONS.find(
-    (item) => item.value === String(value),
-  );
 
   return (
     <Combobox.Root
       collection={collection}
       value={value ? [String(value)] : []}
+      inputValue={inputValue}
       selectionBehavior="replace"
       onValueChange={handleValueChange}
       onInputValueChange={handleInputChange}
       minH="1vh"
+      {...props}
     >
       <Combobox.Control minH="24px">
         <Combobox.Input
           bg="whiteAlpha.900"
           color="blackAlpha.800"
-           _placeholder={{
+          _placeholder={{
             color: "blackAlpha.800",
             opacity: 1,
           }}
           minH="24px"
-          placeholder={selectedItem?.label ?? placeholder}
+          placeholder={placeholder}
         />
 
         <Combobox.IndicatorGroup minH="24px" color="grey">
@@ -93,7 +109,6 @@ export const ComboBoxDashboard = ({
                 }}
               >
                 {item.label}
-
                 <Combobox.ItemIndicator />
               </Combobox.Item>
             ))}

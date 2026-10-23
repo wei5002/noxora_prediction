@@ -20,6 +20,8 @@ export default function Home() {
   const STORAGE_KEYS = {
     locations: "noxora_last_locations",
     prediction: "noxora_last_prediction",
+    predictionLocation: "noxora_selected_prediction_location",
+    weatherLocation: "noxora_selected_weather_location",
   };
 
   const [predictionData, setPredictionData] = useState(null);
@@ -29,13 +31,19 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [showPredictionPopup, setShowPredictionPopup] = useState(false);
-  // const [currentLocationData, setCurrentLocationData] = useState(null);
   const [allLocations, setAllLocations] = useState([]);
+  const [cacheRestored, setCacheRestored] = useState(false);
 
   useEffect(() => {
     try {
       const savedLocations = localStorage.getItem(STORAGE_KEYS.locations);
       const savedPrediction = localStorage.getItem(STORAGE_KEYS.prediction);
+      const savedPredictionLocation = localStorage.getItem(
+        STORAGE_KEYS.predictionLocation,
+      );
+      const savedWeatherLocation = localStorage.getItem(
+        STORAGE_KEYS.weatherLocation,
+      );
 
       if (savedLocations) {
         const parsedLocations = JSON.parse(savedLocations);
@@ -48,8 +56,28 @@ export default function Home() {
       if (savedPrediction) {
         setPredictionData(JSON.parse(savedPrediction));
       }
+
+      if (savedWeatherLocation) {
+        setSelectedLocation(savedWeatherLocation);
+      }
+
+      if (savedPredictionLocation) {
+        setSelectedPredictionLocation(savedPredictionLocation);
+      } else if (savedPrediction) {
+        const parsedPrediction = JSON.parse(savedPrediction);
+
+        if (parsedPrediction.location_id != null) {
+          const locationId = String(parsedPrediction.location_id);
+
+          setSelectedPredictionLocation(locationId);
+
+          localStorage.setItem(STORAGE_KEYS.predictionLocation, locationId);
+        }
+      }
     } catch (err) {
       console.error("Failed to restore Noxora data:", err);
+    } finally {
+      setCacheRestored(true);
     }
   }, []);
 
@@ -90,10 +118,23 @@ export default function Home() {
   };
 
   const handleSelectLocation = (locationId) => {
-    setSelectedLocation(String(locationId));
+    const value = String(locationId);
+
+    setSelectedLocation(value);
+
+    try {
+      localStorage.setItem(STORAGE_KEYS.weatherLocation, value);
+    } catch (err) {
+      console.error("Failed to save selected weather location:", err);
+    }
   };
 
   const handleSendPrediction = () => {
+    if (!cacheRestored) {
+      setError("Please wait while the saved data is being restored.");
+      return;
+    }
+
     const isLoggedIn = localStorage.getItem("isLoggedIn");
 
     if (isLoggedIn !== "true") {
@@ -110,20 +151,17 @@ export default function Home() {
       setLoading(true);
       setError("");
 
-      // Use data already loaded by useEffect.
-      // Do not call Open-Meteo again when the Send button is clicked.
       const selectedData = allLocations.find(
         (row) => String(row.location_id) === String(selectedPredictionLocation),
       );
 
       if (!selectedData) {
         throw new Error(
-          "Location data is not available yet. Please wait for the real-time data to finish loading.",
+          "Location data is not available. Please connect to the internet to load the data.",
         );
       }
 
       const predictedSVR = Number(selectedData.predicted_nitrogen_dioxide);
-
       const predictedXGBoost = Number(
         selectedData.predicted_nitrogen_dioxide_xgboost,
       );
@@ -152,7 +190,6 @@ export default function Home() {
         throw new Error("Historical NO₂ data (LAG1–LAG3) is incomplete.");
       }
 
-      // Prediction target time from the Python endpoint.
       const targetTimeValue = String(selectedData.target_time || "");
 
       const targetTimeMatch = targetTimeValue.match(
@@ -167,7 +204,6 @@ export default function Home() {
         throw new Error("Prediction time is not available.");
       }
 
-      // Chart order: LAG3, LAG2, LAG1, prediction result.
       const svrChartSeries = [...lagValues, predictedSVR].map((value) =>
         Number(value.toFixed(2)),
       );
@@ -181,9 +217,7 @@ export default function Home() {
 
       const chartCategories = [-180, -120, -60, 0].map((offset) => {
         const totalMinutes = (targetMinutes + offset + 1440) % 1440;
-
         const h = String(Math.floor(totalMinutes / 60)).padStart(2, "0");
-
         const m = String(totalMinutes % 60).padStart(2, "0");
 
         return `${h}:${m}`;
@@ -192,16 +226,13 @@ export default function Home() {
       const newPredictionData = {
         location_id: selectedData.location_id,
         target_time: selectedData.target_time,
-
         svrValue: predictedSVR,
         xgboostValue: predictedXGBoost,
         time: targetTime,
-
         temperature_2m: selectedData.temperature_2m,
         wind_speed_10m: selectedData.wind_speed_10m,
         rain: selectedData.rain,
         relative_humidity_2m: selectedData.relative_humidity_2m,
-
         svrChartSeries,
         xgboostChartSeries,
         chartCategories,
@@ -213,6 +244,11 @@ export default function Home() {
         localStorage.setItem(
           STORAGE_KEYS.prediction,
           JSON.stringify(newPredictionData),
+        );
+
+        localStorage.setItem(
+          STORAGE_KEYS.predictionLocation,
+          String(selectedData.location_id),
         );
       } catch (err) {
         console.error("Failed to save prediction results:", err);
@@ -316,6 +352,27 @@ export default function Home() {
     };
   }, []);
 
+  const displayedTime = currentLocationData?.time_no2
+    ? String(currentLocationData.time_no2)
+    : new Date().toLocaleTimeString("en-US", {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+        timeZone: "Asia/Jakarta",
+      });
+
+  const handleSelectPredictionLocation = (locationId) => {
+    const value = String(locationId);
+
+    setSelectedPredictionLocation(value);
+
+    try {
+      localStorage.setItem(STORAGE_KEYS.predictionLocation, value);
+    } catch (err) {
+      console.error("Failed to save selected prediction location:", err);
+    }
+  };
+
   return (
     <Flex
       direction={"column"}
@@ -382,19 +439,12 @@ export default function Home() {
 
                     <ComboBoxDashboard
                       value={selectedLocation}
-                      onValueChange={setSelectedLocation}
+                      onValueChange={handleSelectLocation}
                     />
                   </Flex>
                 </Flex>
 
-                <Text fontWeight="bold">
-                  {new Date().toLocaleTimeString("en-US", {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                    hour12: false,
-                    timeZone: "Asia/Jakarta",
-                  })}
-                </Text>
+                <Text fontWeight="bold">{displayedTime}</Text>
               </Flex>
 
               <Flex direction="row" gap="17px" align="center">
@@ -577,9 +627,10 @@ export default function Home() {
                   </Text>
 
                   <ComboBoxDashboard
+                    key={`prediction-${selectedPredictionLocation}`}
                     w="100%"
                     value={selectedPredictionLocation}
-                    onValueChange={setSelectedPredictionLocation}
+                    onValueChange={handleSelectPredictionLocation}
                   />
                 </Flex>
 
