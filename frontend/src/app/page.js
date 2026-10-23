@@ -352,15 +352,6 @@ export default function Home() {
     };
   }, []);
 
-  const displayedTime = currentLocationData?.time_no2
-    ? String(currentLocationData.time_no2)
-    : new Date().toLocaleTimeString("en-US", {
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: false,
-        timeZone: "Asia/Jakarta",
-      });
-
   const handleSelectPredictionLocation = (locationId) => {
     const value = String(locationId);
 
@@ -444,7 +435,14 @@ export default function Home() {
                   </Flex>
                 </Flex>
 
-                <Text fontWeight="bold">{displayedTime}</Text>
+                <Text fontWeight="bold">
+                  {new Date().toLocaleTimeString("en-US", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    hour12: false,
+                    timeZone: "Asia/Jakarta",
+                  })}
+                </Text>
               </Flex>
 
               <Flex direction="row" gap="17px" align="center">
