@@ -5,6 +5,7 @@ import { PasswordInput } from "@/components/ui/password-input";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { PopupMini2 } from "../../components/Popup/popup";
+import { useEffect } from "react";
 
 export default function ChangePassword() {
   const router = useRouter();
@@ -31,6 +32,7 @@ export default function ChangePassword() {
   const handleChangePassword = async () => {
     const params = new URLSearchParams(window.location.search);
     const resetToken = params.get("token");
+    const isResetPassword = Boolean(resetToken);
 
     if (!newPassword) {
       showMessage("Change Password", "New password is required.");
@@ -46,10 +48,7 @@ export default function ChangePassword() {
     }
 
     if (!confirmPassword) {
-      showMessage(
-        "Change Password",
-        "Please confirm your new password.",
-      );
+      showMessage("Change Password", "Please confirm your new password.");
       return;
     }
 
@@ -64,8 +63,8 @@ export default function ChangePassword() {
     try {
       let response;
 
-      // RESET PASSWORD FROM EMAIL
-      if (resetToken) {
+      // RESET PASSWORD: hanya jika dibuka melalui link email
+      if (isResetPassword) {
         response = await fetch(`${API_URL}/reset-password`, {
           method: "POST",
           headers: {
@@ -77,25 +76,26 @@ export default function ChangePassword() {
             confirmPassword,
           }),
         });
-      }
-
-      // CHANGE PASSWORD FROM PROFILE
-      else {
+      } else {
+        // CHANGE PASSWORD: pengguna yang sudah login
         const storedUser = localStorage.getItem("user");
 
         if (!storedUser) {
-          showMessage(
-            "Change Password",
-            "Account not found. Please log in first.",
-            () => {
-              router.push("/Login");
-            },
+          showMessage("Change Password", "Please log in first.", () =>
+            router.push("/Login"),
           );
-
           return;
         }
 
         const user = JSON.parse(storedUser);
+
+        if (!user.user_id) {
+          showMessage(
+            "Change Password",
+            "User information is invalid. Please log in again.",
+          );
+          return;
+        }
 
         response = await fetch(`${API_URL}/change-password/${user.user_id}`, {
           method: "PUT",
@@ -119,18 +119,33 @@ export default function ChangePassword() {
         return;
       }
 
-      showMessage("Change Password", "Password changed successfully.", () => {
-        router.push("/Login");
-      });
+      // Hapus token dari URL setelah reset berhasil
+      if (isResetPassword) {
+        window.history.replaceState({}, "", window.location.pathname);
+      }
+
+      showMessage("Change Password", "Password changed successfully.", () =>
+        router.push("/Login"),
+      );
     } catch (error) {
       console.error("Change Password Error:", error);
 
-      showMessage(
-        "Change Password",
-        "Unable to connect to the server.",
-      );
+      showMessage("Change Password", "Unable to connect to the server.");
     }
   };
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get("token");
+
+    // Jika tidak ada token, ini adalah halaman Change Password biasa.
+    if (!token) {
+      return;
+    }
+
+    // Jangan hapus token di sini karena masih diperlukan
+    // jika halaman dibuka dari link reset password email.
+  }, []);
 
   return (
     <Flex w="100%" minH="100vh" justify="center" align="center">
