@@ -2,7 +2,7 @@
 
 import { Button, Flex, Text } from "@chakra-ui/react";
 import { PasswordInput } from "@/components/ui/password-input";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { PopupMini2 } from "../../components/Popup/popup";
 
@@ -12,6 +12,7 @@ export default function ChangePassword() {
 
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [resetToken, setResetToken] = useState(null);
   const [showPopup, setShowPopup] = useState(false);
   const [popupTitle, setPopupTitle] = useState("");
   const [popupMessage, setPopupMessage] = useState("");
@@ -28,10 +29,17 @@ export default function ChangePassword() {
     setShowPopup(true);
   };
 
-  const handleChangePassword = async () => {
-    const params = new URLSearchParams(window.location.search);
-    const resetToken = params.get("token");
+  // Baca token dari link email SEKALI, simpan di state, lalu bersihkan URL.
+  useEffect(() => {
+    const token = new URLSearchParams(window.location.search).get("token");
 
+    if (token) {
+      setResetToken(token);
+      router.replace(window.location.pathname);
+    }
+  }, [router]);
+
+  const handleChangePassword = async () => {
     if (!newPassword) {
       showMessage("Change Password", "New password is required.");
       return;
@@ -61,8 +69,8 @@ export default function ChangePassword() {
     try {
       let response;
 
-      // RESET PASSWORD: hanya ketika URL berasal dari link email.
       if (resetToken) {
+        // RESET PASSWORD: hanya jika halaman dibuka dari link email
         response = await fetch(`${API_URL}/reset-password`, {
           method: "POST",
           headers: {
@@ -75,12 +83,12 @@ export default function ChangePassword() {
           }),
         });
       } else {
-        // CHANGE PASSWORD: pengguna yang sudah login melalui Profile.
+        // CHANGE PASSWORD: user yang sudah login (dari Profile)
         const storedUser = localStorage.getItem("user");
 
         if (!storedUser) {
           showMessage("Change Password", "Please log in first.", () =>
-            router.push("/Login"),
+            router.replace("/Login"),
           );
           return;
         }
@@ -93,7 +101,7 @@ export default function ChangePassword() {
           showMessage(
             "Change Password",
             "User information is invalid. Please log in again.",
-            () => router.push("/Login"),
+            () => router.replace("/Login"),
           );
           return;
         }
@@ -102,7 +110,7 @@ export default function ChangePassword() {
           showMessage(
             "Change Password",
             "User information is invalid. Please log in again.",
-            () => router.push("/Login"),
+            () => router.replace("/Login"),
           );
           return;
         }
@@ -122,6 +130,10 @@ export default function ChangePassword() {
       const data = await response.json();
 
       if (!response.ok) {
+        // Token yang gagal sudah tidak berguna, buang supaya
+        // percobaan berikutnya tidak mengirim token yang sama.
+        if (resetToken) setResetToken(null);
+
         showMessage(
           "Change Password",
           data.message || "Failed to change password.",
@@ -129,12 +141,11 @@ export default function ChangePassword() {
         return;
       }
 
-      if (resetToken) {
-        window.history.replaceState({}, "", window.location.pathname);
-      }
+      // Berhasil: token (kalau ada) sudah terpakai di backend
+      if (resetToken) setResetToken(null);
 
       showMessage("Change Password", "Password changed successfully.", () =>
-        router.push("/Login"),
+        router.replace("/Login"),
       );
     } catch (error) {
       console.error("Change Password Error:", error);
