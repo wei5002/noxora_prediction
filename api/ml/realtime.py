@@ -1,3 +1,4 @@
+
 import json
 from datetime import datetime, timedelta
 from http.server import BaseHTTPRequestHandler
@@ -154,7 +155,7 @@ def fetch_no2():
 
     if df.empty:
         raise ValueError(
-            "Data NO2 dari Open-Meteo kosong."
+            "NO2 data from Open-Meteo is empty."
         )
 
     return df
@@ -242,7 +243,7 @@ def fetch_weather():
 
     if df.empty:
         raise ValueError(
-            "Data meteorologi dari Open-Meteo kosong."
+            "Weather data from Open-Meteo is empty."
         )
 
     return df
@@ -339,8 +340,8 @@ def prepare_prediction_data(
 
             if previous.empty:
                 raise ValueError(
-                    f"Data NO2 lokasi {location_id} "
-                    f"pada {lag_time} tidak tersedia."
+                    f"NO2 data for location {location_id} "
+                    f"at {lag_time} is unavailable."
                 )
 
             value = previous.iloc[0][
@@ -349,8 +350,8 @@ def prepare_prediction_data(
 
             if pd.isna(value):
                 raise ValueError(
-                    f"Data NO2 lokasi {location_id} "
-                    f"pada {lag_time} kosong."
+                    f"NO2 data for location {location_id} "
+                    f"at {lag_time} is empty."
                 )
 
             lag_values.append(
@@ -368,8 +369,8 @@ def prepare_prediction_data(
 
         if target_weather.empty:
             raise ValueError(
-                f"Data meteorologi lokasi {location_id} "
-                f"pada {weather_time} tidak tersedia."
+                f"Weather data for location {location_id} "
+                f"at {weather_time} is unavailable."
             )
 
         weather = target_weather.iloc[0]
@@ -405,13 +406,13 @@ def prepare_prediction_data(
 def load_models():
     if not SVR_MODEL_PATH.exists():
         raise FileNotFoundError(
-            f"Model SVR tidak ditemukan: "
+            f"SVR model not found: "
             f"{SVR_MODEL_PATH}"
         )
 
     if not XGBOOST_MODEL_PATH.exists():
         raise FileNotFoundError(
-            f"Model XGBoost tidak ditemukan: "
+            f"XGBoost model not found: "
             f"{XGBOOST_MODEL_PATH}"
         )
 
@@ -534,7 +535,9 @@ def generate_prediction():
         "data": results,
     }
 
+
 # Vercel Function
+
 class handler(BaseHTTPRequestHandler):
     def do_GET(self):
         try:
@@ -566,8 +569,8 @@ class handler(BaseHTTPRequestHandler):
                 {
                     "success": False,
                     "message": (
-                        "Gagal mengambil data "
-                        "dari Open-Meteo."
+                        "Failed to retrieve data "
+                        "from Open-Meteo."
                     ),
                     "error": str(error),
                 }
@@ -595,8 +598,8 @@ class handler(BaseHTTPRequestHandler):
                 {
                     "success": False,
                     "message": (
-                        "Terjadi kesalahan "
-                        "pada proses prediksi."
+                        "An error occurred during "
+                        "the prediction process."
                     ),
                     "error": str(error),
                 }
