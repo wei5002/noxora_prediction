@@ -18,7 +18,6 @@ PREDICTION_DIR.mkdir(parents=True, exist_ok=True)
 
 
 # DATASET
-
 DATASETS = {
     "no2": {
         "path": PROCESSED_DIR / "dataset-no2.csv",
@@ -49,7 +48,6 @@ SPLIT_RATIOS = {
     "70_30": 0.30,
     "80_20": 0.20,
 }
-
 
 # LOAD DATASET
 def load_dataset(dataset_name, dataset_info):
@@ -118,7 +116,6 @@ def load_dataset(dataset_name, dataset_info):
     print(f"Jumlah data: {len(df):,}")
 
     return df
-
 
 # SPLIT DATA BERDASARKAN WAKTU
 def split_by_time(df, test_size):

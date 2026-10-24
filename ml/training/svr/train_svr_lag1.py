@@ -14,7 +14,6 @@ from sklearn.svm import SVR
 
 
 # PATH
-
 BASE_DIR = Path(__file__).resolve().parents[2]
 
 PROCESSED_DIR = (
@@ -50,7 +49,6 @@ EVALUATION_DIR.mkdir(
 
 
 # KONFIGURASI TRAINING
-
 DATASETS = {
     "no2": {
         "file": "dataset-no2.csv",
@@ -88,7 +86,6 @@ MODEL_PARAMS = {
 
 
 # ANIMASI PROSES
-
 def show_progress(stop_event, message):
 
     spinner = itertools.cycle(
@@ -109,7 +106,6 @@ def show_progress(stop_event, message):
 
 
 # MEMUAT DATASET
-
 def load_dataset(dataset_name, config):
 
     file_path = (
@@ -148,14 +144,12 @@ def load_dataset(dataset_name, config):
         )
 
     # Mengubah waktu menjadi datetime.
-
     df["time"] = pd.to_datetime(
         df["time"],
         errors="coerce",
     )
 
     # Memastikan target dan fitur numerik.
-
     numeric_columns = [
         TARGET,
         *config["features"],
@@ -168,7 +162,6 @@ def load_dataset(dataset_name, config):
         )
 
     # Menghapus nilai kosong dan tak hingga.
-
     df = df.replace(
         [np.inf, -np.inf],
         np.nan,
@@ -182,7 +175,6 @@ def load_dataset(dataset_name, config):
     )
 
     # Mengurutkan berdasarkan waktu.
-
     df = df.sort_values(
         "time"
     ).reset_index(
@@ -211,12 +203,10 @@ def load_dataset(dataset_name, config):
 
 
 # MEMBAGI DATA BERDASARKAN WAKTU
-
 def split_by_time(df, train_ratio):
 
     # Memisahkan berdasarkan timestamp unik,
     # bukan mengacak baris data.
-
     unique_times = np.sort(
         df["time"].unique()
     )
@@ -261,7 +251,6 @@ def split_by_time(df, train_ratio):
 
 
 # MEMBUAT MODEL SVR
-
 def create_model():
 
     model = Pipeline(
@@ -283,7 +272,6 @@ def create_model():
 
 
 # TRAINING DAN PREDIKSI
-
 def train_scenario(
     dataset_name,
     config,
@@ -408,7 +396,6 @@ def train_scenario(
     )
 
     # Membuat prediksi pada data testing.
-
     print(
         "Menghasilkan prediksi testing..."
     )
@@ -418,7 +405,6 @@ def train_scenario(
     )
 
     # MENYIMPAN MODEL
-
     model_filename = (
         f"svr_{LAG_CONFIGURATION}_"
         f"{dataset_name}_{split_name}.joblib"
@@ -438,7 +424,6 @@ def train_scenario(
     )
 
     # MENYIMPAN HASIL PREDIKSI
-
     prediction_df = pd.DataFrame(
         {
             "actual": y_test.to_numpy(),
@@ -518,7 +503,6 @@ def train_scenario(
 
 
 # MENJALANKAN SELURUH SKENARIO LAG1
-
 def main():
 
     print(
@@ -568,7 +552,6 @@ def main():
             )
 
     # MENYIMPAN RINGKASAN TRAINING
-
     summary_df = pd.DataFrame(
         scenario_results
     )
@@ -608,6 +591,5 @@ def main():
 
 
 # MAIN
-
 if __name__ == "__main__":
     main()

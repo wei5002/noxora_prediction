@@ -57,7 +57,6 @@ RANDOM_STATE = 42
 
 
 # 2. MEMBACA DATASET
-
 def load_dataset(dataset_name, file_path):
     print(f"\nMembaca dataset: {dataset_name}")
 
@@ -132,7 +131,6 @@ def load_dataset(dataset_name, file_path):
 
 
 # 3. PEMBAGIAN DATA BERDASARKAN WAKTU
-
 def split_by_time(df, test_size):
     timestamps = (
         df["time"]
@@ -179,7 +177,6 @@ def split_by_time(df, test_size):
 
 
 # 4. MEMBUAT MODEL
-
 def create_model(model_name):
     if model_name == "xgboost":
         return XGBRegressor(
@@ -208,7 +205,6 @@ def create_model(model_name):
 
 
 # 5. EVALUASI MODEL
-
 def evaluate_model(y_true, y_pred):
     mse = mean_squared_error(
         y_true,
@@ -230,7 +226,6 @@ def evaluate_model(y_true, y_pred):
 
 
 # 6. TRAINING DAN EVALUASI
-
 def train_experiment(
     dataset_name,
     df,
@@ -342,7 +337,6 @@ def train_experiment(
     )
 
     # Catat hasil eksperimen
-
     result = {
         "dataset": dataset_name,
         "model": model_name,
@@ -395,7 +389,6 @@ def main():
                 all_results.append(result)
 
     # Simpan seluruh hasil evaluasi
-
     RESULT_DIR.mkdir(
         parents=True,
         exist_ok=True
