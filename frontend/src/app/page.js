@@ -343,7 +343,7 @@ export default function Home() {
 
     load();
 
-    const timer = setInterval(load, 5 * 60 * 1000);
+    const timer = setInterval(load, 60 * 60 * 1000);
 
     return () => {
       cancelled = true;
