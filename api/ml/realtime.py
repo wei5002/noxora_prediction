@@ -59,8 +59,7 @@ FEATURES = [
 ]
 
 
-# Path model
-
+# 2. KONFIGURASI LOKASI MODEL
 BASE_DIR = Path(__file__).resolve().parents[2]
 
 SVR_MODEL_PATH = (
@@ -80,7 +79,7 @@ XGBOOST_MODEL_PATH = (
 )
 
 
-# Request API
+# 3. MENGAMBIL DATA DARI API
 
 def fetch_api(url, params):
     response = requests.get(
@@ -94,7 +93,7 @@ def fetch_api(url, params):
     return response.json()
 
 
-# Ambil data NO2
+# 4. MENGAMBIL DATA NO2
 
 def fetch_no2():
     params = {
@@ -115,11 +114,15 @@ def fetch_no2():
         params,
     )
 
+    # Jika respons hanya berupa dictionary (satu lokasi)
+    # ubah menjadi list agar dapat diproses dengan perulangan
     if isinstance(data, dict):
         data = [data]
 
     rows = []
 
+    # Mengulang setiap respons lokasi.
+    # enumerate(start=1) memberikan nomor lokasi mulai dari 1.
     for location_id, item in enumerate(
         data,
         start=1,
@@ -161,7 +164,7 @@ def fetch_no2():
     return df
 
 
-# Ambil data meteorologi
+# 5. MENGAMBIL DATA METEOROLOGI
 
 def fetch_weather():
     params = {
@@ -188,6 +191,8 @@ def fetch_weather():
         params,
     )
 
+    # Jika respons hanya berupa dictionary,
+    # ubah menjadi list agar formatnya seragam.
     if isinstance(data, dict):
         data = [data]
 
@@ -249,9 +254,9 @@ def fetch_weather():
     return df
 
 
-# Tentukan waktu prediksi
-
+# 6. MENENTUKAN WAKTU TARGET PREDIKSI
 def get_target_time():
+    # Mengambil waktu saat ini berdasarkan zona waktu Jakarta.
     now = datetime.now(
         ZoneInfo(TIMEZONE)
     )
@@ -265,6 +270,8 @@ def get_target_time():
         + timedelta(hours=1)
     )
 
+    # Menghapus informasi timezone agar format waktu
+    # sesuai dengan waktu pada DataFrame hasil API.
     return pd.Timestamp(
         target.replace(
             tzinfo=None
@@ -272,7 +279,7 @@ def get_target_time():
     )
 
 
-# Siapkan data prediksi
+# 7. MENYIAPKAN DATA UNTUK PREDIKSI
 
 def prepare_prediction_data(
     df_no2,
@@ -344,16 +351,20 @@ def prepare_prediction_data(
                     f"at {lag_time} is unavailable."
                 )
 
+            # Mengambil nilai NO2 dari baris pertama hasil pencarian.
             value = previous.iloc[0][
                 "nitrogen_dioxide"
             ]
 
+            # Memastikan nilai NO2 tidak kosong.
             if pd.isna(value):
                 raise ValueError(
                     f"NO2 data for location {location_id} "
                     f"at {lag_time} is empty."
                 )
 
+            # Mengubah nilai NO2 menjadi float,
+            # kemudian memasukkannya ke dalam list lag_values.
             lag_values.append(
                 float(value)
             )
@@ -373,6 +384,7 @@ def prepare_prediction_data(
                 f"at {weather_time} is unavailable."
             )
 
+        # Mengambil baris pertama yang sesuai dengan waktu meteorologi.
         weather = target_weather.iloc[0]
 
         rows.append(
@@ -401,8 +413,7 @@ def prepare_prediction_data(
     return pd.DataFrame(rows)
 
 
-# Load model
-
+# 8. MEMUAT MODEL MACHINE LEARNING
 def load_models():
     if not SVR_MODEL_PATH.exists():
         raise FileNotFoundError(
@@ -430,19 +441,20 @@ def load_models():
     )
 
 
-# Format waktu
-
+# 9. MEMFORMAT DATA WAKTU
 def format_time(value):
+    # Jika nilai waktu kosong, kembalikan None.
+    # None nantinya akan diubah menjadi null dalam JSON.
     if pd.isna(value):
         return None
 
+    # Tahun-Bulan-Tanggal Jam:Menit:Detik.
     return pd.Timestamp(value).strftime(
         "%Y-%m-%d %H:%M:%S"
     )
 
 
-# Generate prediction
-
+# 10. MENJALANKAN PROSES PREDIKSI
 def generate_prediction():
     svr_model, xgboost_model = load_models()
 
@@ -536,35 +548,54 @@ def generate_prediction():
     }
 
 
-# Vercel Function
-
+# 11. VERCEL FUNCTION / HTTP HANDLER
+# BaseHTTPRequestHandler digunakan untuk menangani HTTP request.
+# Class handler ini menjadi pintu masuk ketika endpoint dipanggil.
 class handler(BaseHTTPRequestHandler):
+    # Fungsi ini dijalankan ketika endpoint menerima HTTP GET request.
     def do_GET(self):
         try:
+            # Menjalankan seluruh proses pengambilan data
+            # hingga menghasilkan prediksi NO2.
             result = generate_prediction()
 
+            # Mengubah dictionary Python menjadi JSON.
             body = json.dumps(
                 result
             ).encode("utf-8")
 
             self.send_response(200)
+
+            # Memberi tahu client bahwa respons berformat JSON.
             self.send_header(
                 "Content-Type",
                 "application/json",
             )
+
+            # Mengizinkan request dari berbagai origin.
+            # Header ini berkaitan dengan aturan CORS.
             self.send_header(
                 "Access-Control-Allow-Origin",
                 "*",
             )
+
+            # Mengirim ukuran respons dalam satuan byte.
             self.send_header(
                 "Content-Length",
                 str(len(body)),
             )
+
+            # Menandakan bagian header HTTP sudah selesai.
             self.end_headers()
 
+            # Mengirim isi respons JSON kepada client.
             self.wfile.write(body)
 
+        # Menangani error yang berkaitan dengan request ke API.
+        # Contohnya koneksi gagal atau respons HTTP tidak berhasil.
         except requests.RequestException as error:
+
+            # Menyiapkan pesan error dalam format JSON.
             body = json.dumps(
                 {
                     "success": False,
@@ -576,6 +607,8 @@ class handler(BaseHTTPRequestHandler):
                 }
             ).encode("utf-8")
 
+            # Status 502 menunjukkan masalah saat menerima
+            # respons dari layanan eksternal.
             self.send_response(502)
             self.send_header(
                 "Content-Type",
@@ -591,9 +624,13 @@ class handler(BaseHTTPRequestHandler):
             )
             self.end_headers()
 
+            # Mengirim informasi error kepada client.
             self.wfile.write(body)
 
+        # Menangani error lain yang tidak termasuk RequestException.
+        # Contohnya model tidak ditemukan atau data input tidak lengkap.
         except Exception as error:
+            # Menyiapkan informasi error dalam format JSON.
             body = json.dumps(
                 {
                     "success": False,
@@ -605,6 +642,7 @@ class handler(BaseHTTPRequestHandler):
                 }
             ).encode("utf-8")
 
+            # Status 500 menunjukkan terjadi kesalahan pada server.
             self.send_response(500)
             self.send_header(
                 "Content-Type",
