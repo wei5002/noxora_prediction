@@ -46,7 +46,7 @@ def preprocess_dataset(df_no2, df_weather):
 
     # Konversi waktu ke datetime
     df_no2["time"] = pd.to_datetime(df_no2["time"])
-    df_weather["time"] = pd.to_datetime(df_weather["time"])
+    df_weather["time"] = pd.to_datetime(df_weather["time"]) # biar python gampang urutin waktunya bukan string
 
     # Pastikan data numerik
     no2_columns = ["nitrogen_dioxide"]
@@ -58,8 +58,8 @@ def preprocess_dataset(df_no2, df_weather):
     ]
 
     for column in no2_columns:
-        df_no2[column] = pd.to_numeric(
-            df_no2[column], errors="coerce"
+        df_no2[column] = pd.to_numeric( #ubah jadi string jadi angka
+            df_no2[column], errors="coerce" # kalau ga bisa diubah, jadikan NaN
         )
 
     for column in weather_columns:
@@ -81,14 +81,14 @@ def preprocess_dataset(df_no2, df_weather):
         df_no2,
         df_weather,
         on=["location_id", "time"],
-        how="inner",
-        validate="one_to_one"
+        how="inner", # inner join (keduanya cocok)
+        validate="one_to_one" #harus memiliki satu baris data pada masing-masing dataset.
     )
 
     # Urutkan berdasarkan lokasi dan waktu
     df = df.sort_values(
         by=["location_id", "time"]
-    ).reset_index(drop=True)
+    ).reset_index(drop=True) # mengatur indekx column ulang
 
     return df
 
@@ -124,11 +124,13 @@ def clean_dataset(df):
         "wind_speed_10m"
     ]
 
-    df = df.dropna(subset=required_columns).copy()
+    df = df.replace(
+        [float("inf"), float("-inf")],
+        float("nan")
+    )
 
-    # Hapus nilai tak hingga jika ada
-    df = df.replace([float("inf"), float("-inf")], pd.NA)
-    df = df.dropna(subset=required_columns)
+    # Hapus nilai tidak terhingga jika ada
+    df = df.dropna(subset=required_columns).copy()
 
     return df
 
@@ -136,13 +138,13 @@ def clean_dataset(df):
 # 6. MENYIMPAN DATASET
 def save_dataset(df):
     PROCESSED_DIR.mkdir(
-        parents=True,
-        exist_ok=True
+        parents=True, # kalau blm ada folderenya bisa di buat dulu
+        exist_ok=True # jika sudah ada ga  bakal error
     )
 
     df.to_csv(
-        OUTPUT_FILE,
-        index=False
+        OUTPUT_FILE, 
+        index=False 
     )
 
     print(f"\nDataset berhasil disimpan:")
@@ -200,5 +202,5 @@ def main():
     print("\nPreprocessing selesai!")
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # menunjukkan bagaimana file dijalankan dan secara langsung
     main()

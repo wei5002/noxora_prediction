@@ -14,7 +14,6 @@ from zoneinfo import ZoneInfo
 
 
 # 1. KONFIGURASI
-
 LATITUDES = [
     -6.199997,
     -5.7986665,
@@ -87,7 +86,6 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 
 # 2. REQUEST API DENGAN RETRY
-
 def fetch_api(url, params):
     for attempt in range(MAX_ATTEMPTS):
         try:
@@ -152,7 +150,6 @@ def fetch_api(url, params):
 
 
 # 3. VALIDASI JUMLAH LOKASI
-
 def normalize_response(data):
     if isinstance(data, dict):
         data = [data]
@@ -173,7 +170,6 @@ def normalize_response(data):
 
 
 # 4. AMBIL DATA NO2 HOURLY
-
 def fetch_no2():
     params = {
         "latitude": ",".join(map(str, LATITUDES)),
@@ -218,7 +214,6 @@ def fetch_no2():
 
 
 # 5. AMBIL DATA METEOROLOGI HOURLY
-
 def fetch_weather():
     params = {
         "latitude": ",".join(map(str, LATITUDES)),
@@ -284,7 +279,6 @@ def fetch_weather():
 
 
 # 6. TENTUKAN WAKTU PREDIKSI
-
 def get_target_time():
     now = datetime.now(ZoneInfo(TIMEZONE))
 
@@ -299,7 +293,6 @@ def get_target_time():
 
 
 # 7. SIAPKAN FITUR PREDIKSI
-
 def prepare_prediction_data(
     df_no2,
     df_weather,
@@ -393,8 +386,7 @@ def prepare_prediction_data(
 
     if result[numeric_columns].isna().any().any():
         raise ValueError(
-            "Fitur prediksi mengandung nilai kosong "
-            "atau bukan angka."
+            "Fitur prediksi mengandung nilai kosong atau bukan angka."
         )
 
     if not np.isfinite(
@@ -413,11 +405,9 @@ def prepare_prediction_data(
 
 
 # 8. SIMPAN CSV DENGAN AMAN
-
 def save_csv_safely(df, output_file):
     """
-    File lama tidak diganti sampai CSV baru selesai ditulis.
-    Jika proses penulisan gagal, file lama tetap dipertahankan.
+    CSV lama diganti hanya setelah CSV baru berhasil ditulis.
     """
     output_file.parent.mkdir(
         parents=True,
@@ -457,7 +447,6 @@ def save_csv_safely(df, output_file):
 
 
 # 9. PREDIKSI SVR
-
 def main():
     if not MODEL_PATH.exists():
         raise FileNotFoundError(
@@ -524,7 +513,6 @@ def main():
 
 
 # 10. JALANKAN PROGRAM
-
 if __name__ == "__main__":
     try:
         main()

@@ -14,7 +14,6 @@ from zoneinfo import ZoneInfo
 
 
 # 1. KONFIGURASI
-
 LATITUDES = [
     -6.199997,
     -5.7986665,
@@ -85,7 +84,6 @@ OUTPUT_DIR.mkdir(
 
 
 # 2. REQUEST API DENGAN RETRY
-
 def fetch_api(url, params):
     for attempt in range(MAX_ATTEMPTS):
         try:
@@ -152,7 +150,6 @@ def fetch_api(url, params):
 
 
 # 3. VALIDASI RESPONS API
-
 def normalize_response(data):
     if isinstance(data, dict):
         data = [data]
@@ -173,7 +170,6 @@ def normalize_response(data):
 
 
 # 4. AMBIL DATA NO2 HOURLY
-
 def fetch_no2():
     params = {
         "latitude": ",".join(map(str, LATITUDES)),
@@ -220,7 +216,6 @@ def fetch_no2():
 
 
 # 5. AMBIL DATA METEOROLOGI HOURLY
-
 def fetch_weather():
     params = {
         "latitude": ",".join(map(str, LATITUDES)),
@@ -286,7 +281,6 @@ def fetch_weather():
 
 
 # 6. TENTUKAN WAKTU PREDIKSI
-
 def get_target_time():
     now = datetime.now(
         ZoneInfo(TIMEZONE)
@@ -305,7 +299,6 @@ def get_target_time():
 
 
 # 7. SIAPKAN FITUR PREDIKSI
-
 def prepare_prediction_data(
     df_no2,
     df_weather,
@@ -339,6 +332,7 @@ def prepare_prediction_data(
         lag_times = [
             target_time - pd.Timedelta(hours=1),
             target_time - pd.Timedelta(hours=2),
+            target_time - pd.Timedelta(hours=3),
         ]
 
         lag_values = []
@@ -380,7 +374,7 @@ def prepare_prediction_data(
             "weather_time": weather_time,
             "LAG1": lag_values[0],
             "LAG2": lag_values[1],
-            "LAG3": np.nan,
+            "LAG3": lag_values[2],
             "temperature_2m": weather["temperature_2m"],
             "relative_humidity_2m":
                 weather["relative_humidity_2m"],
@@ -396,8 +390,7 @@ def prepare_prediction_data(
 
     if result[XGBOOST_FEATURES].isna().any().any():
         raise ValueError(
-            "Fitur LAG1 atau LAG2 mengandung nilai kosong "
-            "atau bukan angka."
+            "Fitur LAG1 atau LAG2 mengandung nilai kosong atau bukan angka."
         )
 
     if not np.isfinite(
@@ -416,7 +409,6 @@ def prepare_prediction_data(
 
 
 # 8. SIMPAN CSV DENGAN AMAN
-
 def save_csv_safely(df, output_file):
     """
     CSV lama diganti hanya setelah CSV baru berhasil ditulis.
@@ -458,7 +450,6 @@ def save_csv_safely(df, output_file):
 
 
 # 9. PREDIKSI XGBOOST
-
 def main():
     if not MODEL_PATH.exists():
         raise FileNotFoundError(
@@ -526,7 +517,6 @@ def main():
 
 
 # 10. JALANKAN PROGRAM
-
 if __name__ == "__main__":
     try:
         main()

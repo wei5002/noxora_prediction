@@ -2,7 +2,7 @@ import pandas as pd
 from pathlib import Path
 
 # 1. KONFIGURASI PATH
-BASE_DIR = Path(__file__).resolve().parents[1]
+BASE_DIR = Path(__file__).resolve().parents[1] # posisi file saat ini ke-2
 
 RAW_DIR = BASE_DIR / "data" / "raw"
 PROCESSED_DIR = BASE_DIR / "data" / "processed"
@@ -66,7 +66,7 @@ def preprocess_dataset(df):
 def create_lag_features(df):
     print("Membuat fitur LAG1, LAG2, dan LAG3...")
     grouped_no2 = df.groupby("location_id")["nitrogen_dioxide"]
-    df["LAG1"] = grouped_no2.shift(1)
+    df["LAG1"] = grouped_no2.shift(1) #mengeserkan 1 data ke bawah
     df["LAG2"] = grouped_no2.shift(2)
     df["LAG3"] = grouped_no2.shift(3)
 
@@ -98,8 +98,8 @@ def clean_dataset(df):
 # 6. MENYIMPAN DATASET
 def save_dataset(df):
     PROCESSED_DIR.mkdir(
-        parents=True,
-        exist_ok=True
+        parents=True, # kalau blm ada folderenya bisa di buat dulu
+        exist_ok=True # jika sudah ada ga  bakal error
     )
 
     df.to_csv(
@@ -146,8 +146,6 @@ def main():
     print("\nMissing value:")
     print(df.isnull().sum().to_string())
 
-    print("\nPreprocessing NO2 selesai!")
 
-
-if __name__ == "__main__":
+if __name__ == "__main__": # menunjukkan bagaimana file dijalankan dan secara langsung
     main()

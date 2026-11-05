@@ -54,11 +54,11 @@ REQUIRED_COLUMNS = [
 
 # POLA NAMA FILE PREDIKSI
 FILENAME_PATTERN = re.compile(
-    r"^(xgboost|svr)_"
-    r"(?:(lag1|lag12|lag123)_)?"
-    r"(no2_meteorologi|no2)_"
-    r"(70_30|80_20)_predictions\.csv$",
-    re.IGNORECASE,
+    r"^(xgboost|svr)_" # nama algoritma
+    r"(?:(lag1|lag12|lag123)_)?" # konfigurasi lag (opsional)
+    r"(no2_meteorologi|no2)_" # nama dataset
+    r"(70_30|80_20)_predictions\.csv$", # nama split data
+    re.IGNORECASE, # abaikan kapitalisasi
 )
 
 # MEMBACA INFORMASI SKENARIO DARI NAMA FILE
@@ -76,7 +76,7 @@ def parse_prediction_filename(file_path):
     )
 
     if lag is None:
-        lag = "lag123"
+        return None
 
     algorithm = (
         "XGBoost"
@@ -109,12 +109,11 @@ def load_predictions():
 
     if not prediction_files:
         raise FileNotFoundError(
-            "Tidak ada file prediksi eksperimen. "
-            "Jalankan training terlebih dahulu."
+            "Tidak ada file prediksi eksperimen. Jalankan training terlebih dahulu."
         )
 
-    scenario_files = {}
-    ignored_files = []
+    scenario_files = {} # menyimpan file prediksi terbaru untuk setiap skenario
+    ignored_files = [] # menyimpan file prediksi yang tidak sesuai 
 
     for file_path in prediction_files:
 
@@ -140,36 +139,33 @@ def load_predictions():
                 r"^(xgboost|svr)_"
                 r"(no2_meteorologi|no2)_"
                 r"(70_30|80_20)_predictions\.csv$",
-                file_path.name,
+                file_path.name, # mengambil nama file
                 re.IGNORECASE,
             )
             is not None
         )
 
         if scenario_key not in scenario_files:
-
             scenario_files[scenario_key] = (
                 file_path,
                 metadata,
                 is_legacy_file,
             )
-
         elif (
             scenario_files[scenario_key][2]
             and not is_legacy_file
         ):
-
             scenario_files[scenario_key] = (
                 file_path,
                 metadata,
                 is_legacy_file,
             )
 
-    dataframes = []
-    invalid_files = []
+    dataframes = [] # menyimpan data prediksi yang berhasil diperiksa
+    invalid_files = [] # menyimpan informasi file yang tidak dapat digunakan untuk evaluasi
 
     for (
-        file_path,
+        file_path, 
         metadata,
         _,
     ) in scenario_files.values():
@@ -250,8 +246,7 @@ def load_predictions():
 
     if not dataframes:
         raise ValueError(
-            "Tidak ada hasil prediksi valid "
-            "untuk dievaluasi."
+            "Tidak ada hasil prediksi valid untuk dievaluasi."
         )
 
     return pd.concat(
@@ -479,7 +474,7 @@ def check_scenarios(results_df):
             split,
         ) in sorted(
             missing_scenarios,
-            key=lambda item: (
+            key=lambda item: ( # mengurutkan skenario berdasarkan urutan algoritma, dataset, split, dan konfigurasi lag
                 algorithm_order[item[0]],
                 dataset_order[item[2]],
                 split_order[item[3]],

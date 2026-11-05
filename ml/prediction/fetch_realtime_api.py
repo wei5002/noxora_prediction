@@ -73,7 +73,6 @@ OUTPUT_FILE = OUTPUT_DIR / "realtime_api.csv"
 
 
 # 2. REQUEST API
-
 def fetch_api(url, params):
     max_attempts = 2
 
@@ -131,6 +130,7 @@ def fetch_api(url, params):
 
     raise RuntimeError("Gagal mengambil data API.")
 
+# memastikan bahwa respons API memiliki format yang benar dan mencakup semua lokasi yang diharapkan
 def normalize_response(data):
     if isinstance(data, dict):
         # Respons satu lokasi.
@@ -154,7 +154,6 @@ def normalize_response(data):
 
 
 # 3. AMBIL DATA NO2 PER JAM
-
 def fetch_no2():
     params = {
         "latitude": ",".join(map(str, LATITUDES)),
@@ -199,7 +198,6 @@ def fetch_no2():
 
 
 # 4. AMBIL DATA METEOROLOGI TERKINI
-
 def fetch_weather():
     params = {
         "latitude": ",".join(map(str, LATITUDES)),
@@ -254,7 +252,6 @@ def fetch_weather():
 
 
 # 5. VALIDASI DATA SEBELUM DISIMPAN
-
 def validate_data(df):
     if df.empty:
         raise ValueError(
@@ -281,8 +278,8 @@ def validate_data(df):
 
     if location_ids != EXPECTED_LOCATIONS:
         raise ValueError(
-            "Data tidak mencakup seluruh 10 lokasi. "
-            "CSV lama dipertahankan."
+            "Hasil penggabungan tidak mencakup seluruh "
+            "10 lokasi. CSV lama dipertahankan."
         )
 
     if df["location_id"].duplicated().any():
@@ -309,9 +306,7 @@ def validate_data(df):
 
     if df[numeric_columns].isna().any().any():
         raise ValueError(
-            "Data NO2, lag, atau meteorologi memiliki "
-            "nilai kosong/tidak valid. CSV lama "
-            "dipertahankan."
+            "Data NO2, lag, atau meteorologi memiliki nilai kosong/tidak valid. CSV lama dipertahankan."
         )
 
     if not df[numeric_columns].apply(
@@ -345,7 +340,6 @@ def validate_data(df):
 
 
 # 6. SIMPAN CSV DENGAN AMAN
-
 def save_csv_safely(df):
     OUTPUT_DIR.mkdir(
         parents=True,
@@ -355,9 +349,7 @@ def save_csv_safely(df):
     temp_path = None
 
     try:
-        # File sementara berada di folder yang sama
-        # agar penggantian file dapat dilakukan atomik.
-        with tempfile.NamedTemporaryFile(
+        with tempfile.NamedTemporaryFile( # membuat file sementara untuk menyimpan data CSV baru
             mode="w",
             encoding="utf-8",
             newline="",
@@ -376,8 +368,7 @@ def save_csv_safely(df):
 
             temp_file.flush()
 
-        # CSV lama baru diganti setelah data lolos
-        # validasi dan penulisan file selesai.
+        # CSV lama baru diganti setelah data lolos validasi dan penulisan file selesai.
         temp_path.replace(OUTPUT_FILE)
 
     finally:
@@ -386,7 +377,6 @@ def save_csv_safely(df):
 
 
 # 7. JALANKAN PENGAMBILAN DATA
-
 def main():
     print("Mengambil data NO2 dari Open-Meteo...")
     df_no2 = fetch_no2()
@@ -493,10 +483,10 @@ def main():
 
     df = pd.DataFrame(rows)
 
-    # Validasi seluruh lokasi sebelum mengganti CSV lama.
+    # Validasi seluruh lokasi sebelum mengganti CSV lama
     df = validate_data(df)
 
-    # Hanya data valid yang disimpan.
+    # Hanya data valid yang disimpan
     save_csv_safely(df)
 
     print("\nPengambilan data realtime berhasil.")
@@ -514,7 +504,6 @@ if __name__ == "__main__":
             f"\nGAGAL memperbarui data realtime: {error}",
             file=sys.stderr,
         )
-
-        # Memberi tahu Express bahwa script gagal.
-        # CSV lama tidak dihapus oleh script ini.
+        # Memberi tahu Express bahwa script gagal
+        # CSV lama tidak dihapus oleh script ini
         sys.exit(1)

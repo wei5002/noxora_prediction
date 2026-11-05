@@ -256,8 +256,8 @@ def train_experiment(
     )
 
     # INISIALISASI MODEL
-    model = Pipeline([
-        ("scaler", StandardScaler()),
+    model = Pipeline([ # menggabungkan beberapa proses menjadi satu alur.
+        ("scaler", StandardScaler()), # menyamakan skala nilai setiap fitur agar memiliki rata-rata 0 dan standar deviasi 1.
         (
             "svr",
             SVR(

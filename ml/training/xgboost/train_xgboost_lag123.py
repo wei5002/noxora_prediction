@@ -132,7 +132,7 @@ def load_dataset(
 
     df["time"] = pd.to_datetime(
         df["time"],
-        errors="coerce"
+        errors="coerce" #gagal dikonversi menjadi NaN
     )
 
     numeric_columns = [
@@ -194,16 +194,15 @@ def split_by_time(
 
     if len(timestamps) < 2:
         raise ValueError(
-            "Jumlah timestamp tidak cukup "
-            "untuk split data."
+            "Jumlah timestamp tidak cukup untuk split data."
         )
 
-    cutoff_index = int(
+    cutoff_index = int( # Menghitung posisi batas data
         len(timestamps)
         * (1 - test_size)
     )
 
-    cutoff_index = max(
+    cutoff_index = max( # posisi batas tidak keluar dari rentang indeks
         1,
         min(
             cutoff_index,
@@ -288,12 +287,12 @@ def train_experiment(
 
     # CREATE MODEL
     model = XGBRegressor(
-        max_depth=2,
-        learning_rate=1,
-        n_estimators=100,
-        random_state=42,
-        n_jobs=-1,
-        objective="reg:squarederror"
+        max_depth=2, #kedalaman pohon
+        learning_rate=1, # laju pembelajaran
+        n_estimators=100, # jumlah pohon keputusan
+        random_state=42, # Mengatur nilai awal proses acak
+        n_jobs=-1, # gunakan semua core CPU (ketika file besar)
+        objective="reg:squarederror" # fungsi objektif untuk regresi
     )
 
 
@@ -391,8 +390,8 @@ def train_experiment(
     ].copy()
 
     predictions[
-        "actual"
-    ] = y_test.to_numpy()
+        "actual" # menyimpan nilai aktual
+    ] = y_test.to_numpy() 
 
     predictions[
         "predicted"
@@ -464,13 +463,13 @@ def main():
                 test_size=test_size
             )
 
-            results.append(
+            results.append( # menambahkan data ke list
                 result
             )
 
 
     # SAVE EVALUATION
-    results_df = pd.DataFrame(
+    results_df = pd.DataFrame( # mengubah data menjadi tabel 
         results
     )
 
