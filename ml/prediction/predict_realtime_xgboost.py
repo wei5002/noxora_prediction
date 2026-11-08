@@ -281,22 +281,10 @@ def fetch_weather():
 
 
 # 6. TENTUKAN WAKTU PREDIKSI
-def get_target_time():
-    now = datetime.now(
-        ZoneInfo(TIMEZONE)
-    )
-
-    target = now.replace(
-        minute=0,
-        second=0,
-        microsecond=0,
-    ) + timedelta(hours=1)
-
-    # Timestamp API menggunakan waktu lokal tanpa timezone.
-    return pd.Timestamp(
-        target.replace(tzinfo=None)
-    )
-
+target_time = (
+    datetime.now(ZoneInfo("Asia/Jakarta"))
+    .replace(minute=0, second=0, microsecond=0)
+)
 
 # 7. SIAPKAN FITUR PREDIKSI
 def prepare_prediction_data(

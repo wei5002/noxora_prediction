@@ -171,7 +171,7 @@ export default function Home() {
         timeZone: "Asia/Jakarta",
       })
     : "-";
-
+    
   // 3. Prediksi dihitung langsung dari data lokasi terpilih (bukan state)
   const { predictionData, error } = useMemo(() => {
     if (!currentLocationData) {
