@@ -92,7 +92,8 @@ export const MiniCard = ({  title, hasil }) => {
   return (
     <Flex
       w={"100%"}
-     p={"20px"}
+     py={"15px"}
+     px={"20px"}
       borderRadius={"2vh"}
       bg={"bg.secondary"}
       // h={"fit-content"}
@@ -127,8 +128,8 @@ export const MiniCardLocation = ({
 
   return (
     <Flex
-      w={"50%"}
-      minH={"18vh"}
+      w={"100%"}
+      minH={"15vh"}
       py={"2vh"}
       px={"20px"}
       borderRadius={"2vh"}
@@ -202,7 +203,7 @@ export const MiniCardLocation = ({
         </Stat.Root>
       </Flex>
 
-      <Flex
+      {/* <Flex
         borderTop={"1px solid #eae9e9"}
         pt={"0.75vh"}
         minH={"22px"}
@@ -225,7 +226,7 @@ export const MiniCardLocation = ({
         >
           {">"}
         </Text>
-      </Flex>
+      </Flex> */}
     </Flex>
   );
 };

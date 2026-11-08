@@ -1,78 +1,135 @@
 "use client";
 
-import { Button, Flex, Grid, Text } from "@chakra-ui/react";
-import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { Flex, Grid, Text } from "@chakra-ui/react";
+
+import { useEffect, useMemo, useState } from "react";
+
 import { FaCloudSun, FaLocationDot } from "react-icons/fa6";
-import {
-  InputPrediction,
-  MiniCard,
-  MiniCardLocation,
-} from "../components/Detail/detail";
+
+import { MiniCard, MiniCardLocation } from "../components/Detail/detail";
+
 import { ComboBoxDashboard } from "../components/ComboBox/comboBox";
+
 import PredictionChart from "../components/Grafik/grafik";
+
 import { RiCloudWindyFill } from "react-icons/ri";
-import { PopupMini } from "../components/Popup/popup";
+
+// Dipindah ke luar komponen supaya tidak dibuat ulang di setiap render
+const STORAGE_KEYS = {
+  locations: "noxora_last_locations",
+  weatherLocation: "noxora_selected_weather_location",
+};
+
+const locationNames = {
+  1: "Jakarta Timur",
+  2: "Kepulauan Seribu",
+  3: "Bekasi",
+  4: "Bogor",
+  5: "Sukabumi",
+  6: "Tangerang",
+  7: "Banten Utara",
+  8: "Bekasi Timur",
+  9: "Karawang",
+  10: "Purwakarta",
+};
+
+// Field baru yang null/undefined tidak boleh menimpa nilai lama yang valid
+const mergeLocations = (prev, next) => {
+  const prevMap = new Map(prev.map((row) => [String(row.location_id), row]));
+
+  return next.map((row) => {
+    const old = prevMap.get(String(row.location_id));
+    if (!old) return row;
+
+    const merged = { ...row };
+    for (const key of Object.keys(old)) {
+      if (merged[key] == null && old[key] != null) {
+        merged[key] = old[key];
+      }
+    }
+    return merged;
+  });
+};
+
+const getNo2Category = (value) => {
+  if (value == null || !Number.isFinite(Number(value))) {
+    return {
+      label: "No Data",
+      description: "Prediction data unavailable",
+      color: "#64748b",
+      bg: "#f1f5f9",
+    };
+  }
+
+  const concentration = Number(value);
+
+  if (concentration <= 80) {
+    return {
+      label: "Baik",
+      description: "Good air quality",
+      color: "#1d5e35",
+      bg: "#b6fbce",
+    };
+  }
+
+  if (concentration <= 200) {
+    return {
+      label: "Sedang",
+      description: "Moderate air quality",
+      color: "#1d4ed8",
+      bg: "#bbd5f7",
+    };
+  }
+
+  if (concentration <= 1130) {
+    return {
+      label: "Tidak Sehat",
+      description: "Unhealthy air quality",
+      color: "#a16207",
+      bg: "#fef9c3",
+    };
+  }
+
+  if (concentration <= 2260) {
+    return {
+      label: "Sangat Tidak Sehat",
+      description: "Very unhealthy air quality",
+      color: "#b91c1c",
+      bg: "#fee2e2",
+    };
+  }
+
+  return {
+    label: "Berbahaya",
+    description: "Hazardous air quality",
+    color: "#ffffff",
+    bg: "#6e2121",
+  };
+};
 
 export default function Home() {
-  const router = useRouter();
-
-  const STORAGE_KEYS = {
-    locations: "noxora_last_locations",
-    prediction: "noxora_last_prediction",
-    predictionLocation: "noxora_selected_prediction_location",
-    weatherLocation: "noxora_selected_weather_location",
-  };
-
-  const [predictionData, setPredictionData] = useState(null);
   const [selectedLocation, setSelectedLocation] = useState("1");
-  const [selectedPredictionLocation, setSelectedPredictionLocation] =
-    useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [showPredictionPopup, setShowPredictionPopup] = useState(false);
   const [allLocations, setAllLocations] = useState([]);
   const [cacheRestored, setCacheRestored] = useState(false);
+  const [currentTime, setCurrentTime] = useState("");
 
+  // 1. Restore cache saat pertama kali mount
   useEffect(() => {
     try {
       const savedLocations = localStorage.getItem(STORAGE_KEYS.locations);
-      const savedPrediction = localStorage.getItem(STORAGE_KEYS.prediction);
-      const savedPredictionLocation = localStorage.getItem(
-        STORAGE_KEYS.predictionLocation,
-      );
       const savedWeatherLocation = localStorage.getItem(
         STORAGE_KEYS.weatherLocation,
       );
 
       if (savedLocations) {
         const parsedLocations = JSON.parse(savedLocations);
-
         if (Array.isArray(parsedLocations)) {
           setAllLocations(parsedLocations);
         }
       }
 
-      if (savedPrediction) {
-        setPredictionData(JSON.parse(savedPrediction));
-      }
-
       if (savedWeatherLocation) {
         setSelectedLocation(savedWeatherLocation);
-      }
-
-      if (savedPredictionLocation) {
-        setSelectedPredictionLocation(savedPredictionLocation);
-      } else if (savedPrediction) {
-        const parsedPrediction = JSON.parse(savedPrediction);
-
-        if (parsedPrediction.location_id != null) {
-          const locationId = String(parsedPrediction.location_id);
-
-          setSelectedPredictionLocation(locationId);
-
-          localStorage.setItem(STORAGE_KEYS.predictionLocation, locationId);
-        }
       }
     } catch (err) {
       console.error("Failed to restore Noxora data:", err);
@@ -81,23 +138,117 @@ export default function Home() {
     }
   }, []);
 
-  const locationNames = {
-    1: "Jakarta Timur",
-    2: "Kepulauan Seribu",
-    3: "Bekasi",
-    4: "Bogor",
-    5: "Sukabumi",
-    6: "Tangerang",
-    7: "Banten Utara",
-    8: "Bekasi Timur",
-    9: "Karawang",
-    10: "Purwakarta",
-  };
+  // 2. Simpan data lokasi ke cache setiap berubah (hanya setelah restore selesai)
+  useEffect(() => {
+    if (!cacheRestored || allLocations.length === 0) return;
 
-  const currentLocationData =
-    allLocations.find(
-      (row) => String(row.location_id) === String(selectedLocation),
-    ) ?? null;
+    try {
+      localStorage.setItem(
+        STORAGE_KEYS.locations,
+        JSON.stringify(allLocations),
+      );
+    } catch (err) {
+      console.error("Failed to save real-time data:", err);
+    }
+  }, [cacheRestored, allLocations]);
+
+  const currentLocationData = useMemo(
+    () =>
+      allLocations.find(
+        (row) => String(row.location_id) === String(selectedLocation),
+      ) ?? null,
+    [allLocations, selectedLocation],
+  );
+
+  const formattedDateTime = currentLocationData?.target_time
+    ? new Date(currentLocationData.target_time).toLocaleString("en-US", {
+        month: "long",
+        day: "numeric",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+        timeZone: "Asia/Jakarta",
+      })
+    : "-";
+
+  // 3. Prediksi dihitung langsung dari data lokasi terpilih (bukan state)
+  const { predictionData, error } = useMemo(() => {
+    if (!currentLocationData) {
+      return { predictionData: null, error: "" };
+    }
+
+    try {
+      const d = currentLocationData;
+      const predictedSVR = Number(d.predicted_nitrogen_dioxide);
+      const predictedXGBoost = Number(d.predicted_nitrogen_dioxide_xgboost);
+
+      if (
+        d.predicted_nitrogen_dioxide == null ||
+        !Number.isFinite(predictedSVR)
+      ) {
+        throw new Error("SVR prediction data is not available.");
+      }
+
+      if (
+        d.predicted_nitrogen_dioxide_xgboost == null ||
+        !Number.isFinite(predictedXGBoost)
+      ) {
+        throw new Error("XGBoost prediction data is not available.");
+      }
+
+      const lagValues = [d.LAG3, d.LAG2, d.LAG1].map(Number);
+
+      if (!lagValues.every(Number.isFinite)) {
+        throw new Error("Historical NO₂ data (LAG1–LAG3) is incomplete.");
+      }
+
+      const targetTimeMatch = String(d.target_time || "").match(
+        /T(\d{2}:\d{2})| (\d{2}:\d{2})/,
+      );
+      const targetTime = targetTimeMatch
+        ? targetTimeMatch[1] || targetTimeMatch[2]
+        : "";
+
+      if (!targetTime) {
+        throw new Error("Prediction time is not available.");
+      }
+
+      const round = (value) => Number(value.toFixed(2));
+
+      const [hour, minute] = targetTime.split(":").map(Number);
+      const targetMinutes = hour * 60 + minute;
+      const chartCategories = [-180, -120, -60, 0].map((offset) => {
+        const totalMinutes = (targetMinutes + offset + 1440) % 1440;
+        const h = String(Math.floor(totalMinutes / 60)).padStart(2, "0");
+        const m = String(totalMinutes % 60).padStart(2, "0");
+        return `${h}:${m}`;
+      });
+
+      return {
+        error: "",
+        predictionData: {
+          location_id: d.location_id,
+          target_time: d.target_time,
+          svrValue: predictedSVR,
+          xgboostValue: predictedXGBoost,
+          time: targetTime,
+          temperature_2m: d.temperature_2m,
+          wind_speed_10m: d.wind_speed_10m,
+          rain: d.rain,
+          relative_humidity_2m: d.relative_humidity_2m,
+          svrChartSeries: [...lagValues, predictedSVR].map(round),
+          xgboostChartSeries: [...lagValues, predictedXGBoost].map(round),
+          chartCategories,
+        },
+      };
+    } catch (err) {
+      return {
+        predictionData: null,
+        error: err.message || "Unable to display prediction results.",
+      };
+    }
+  }, [currentLocationData]);
 
   const getLocationNO2 = (locationId) => {
     const item = allLocations.find(
@@ -129,140 +280,23 @@ export default function Home() {
     }
   };
 
-  const handleSendPrediction = () => {
-    if (!cacheRestored) {
-      setError("Please wait while the saved data is being restored.");
-      return;
-    }
-
-    const isLoggedIn = localStorage.getItem("isLoggedIn");
-
-    if (isLoggedIn !== "true") {
-      setShowPredictionPopup(true);
-      return;
-    }
-
-    if (!selectedPredictionLocation) {
-      setError("Please select a location first.");
-      return;
-    }
-
-    try {
-      setLoading(true);
-      setError("");
-
-      const selectedData = allLocations.find(
-        (row) => String(row.location_id) === String(selectedPredictionLocation),
+  // Menampilkan waktu WIB setelah komponen dimuat agar tidak terjadi hydration mismatch
+  useEffect(() => {
+    const updateTime = () => {
+      setCurrentTime(
+        new Date().toLocaleTimeString("en-US", {
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: false,
+          timeZone: "Asia/Jakarta",
+        }),
       );
+    };
 
-      if (!selectedData) {
-        throw new Error(
-          "Location data is not available. Please connect to the internet to load the data.",
-        );
-      }
-
-      const predictedSVR = Number(selectedData.predicted_nitrogen_dioxide);
-      const predictedXGBoost = Number(
-        selectedData.predicted_nitrogen_dioxide_xgboost,
-      );
-
-      if (
-        selectedData.predicted_nitrogen_dioxide == null ||
-        !Number.isFinite(predictedSVR)
-      ) {
-        throw new Error("SVR prediction data is not available.");
-      }
-
-      if (
-        selectedData.predicted_nitrogen_dioxide_xgboost == null ||
-        !Number.isFinite(predictedXGBoost)
-      ) {
-        throw new Error("XGBoost prediction data is not available.");
-      }
-
-      const lagValues = [
-        selectedData.LAG3,
-        selectedData.LAG2,
-        selectedData.LAG1,
-      ].map(Number);
-
-      if (!lagValues.every(Number.isFinite)) {
-        throw new Error("Historical NO₂ data (LAG1–LAG3) is incomplete.");
-      }
-
-      const targetTimeValue = String(selectedData.target_time || "");
-
-      const targetTimeMatch = targetTimeValue.match(
-        /T(\d{2}:\d{2})| (\d{2}:\d{2})/,
-      );
-
-      const targetTime = targetTimeMatch
-        ? targetTimeMatch[1] || targetTimeMatch[2]
-        : "";
-
-      if (!targetTime) {
-        throw new Error("Prediction time is not available.");
-      }
-
-      const svrChartSeries = [...lagValues, predictedSVR].map((value) =>
-        Number(value.toFixed(2)),
-      );
-
-      const xgboostChartSeries = [...lagValues, predictedXGBoost].map((value) =>
-        Number(value.toFixed(2)),
-      );
-
-      const [hour, minute] = targetTime.split(":").map(Number);
-      const targetMinutes = hour * 60 + minute;
-
-      const chartCategories = [-180, -120, -60, 0].map((offset) => {
-        const totalMinutes = (targetMinutes + offset + 1440) % 1440;
-        const h = String(Math.floor(totalMinutes / 60)).padStart(2, "0");
-        const m = String(totalMinutes % 60).padStart(2, "0");
-
-        return `${h}:${m}`;
-      });
-
-      const newPredictionData = {
-        location_id: selectedData.location_id,
-        target_time: selectedData.target_time,
-        svrValue: predictedSVR,
-        xgboostValue: predictedXGBoost,
-        time: targetTime,
-        temperature_2m: selectedData.temperature_2m,
-        wind_speed_10m: selectedData.wind_speed_10m,
-        rain: selectedData.rain,
-        relative_humidity_2m: selectedData.relative_humidity_2m,
-        svrChartSeries,
-        xgboostChartSeries,
-        chartCategories,
-      };
-
-      setPredictionData(newPredictionData);
-
-      try {
-        localStorage.setItem(
-          STORAGE_KEYS.prediction,
-          JSON.stringify(newPredictionData),
-        );
-
-        localStorage.setItem(
-          STORAGE_KEYS.predictionLocation,
-          String(selectedData.location_id),
-        );
-      } catch (err) {
-        console.error("Failed to save prediction results:", err);
-      }
-    } catch (err) {
-      console.error("Failed to display prediction:", err);
-
-      setError(
-        err.message || "An error occurred while displaying the prediction.",
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
+    updateTime();
+    const timer = setInterval(updateTime, 60 * 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     const target = sessionStorage.getItem("scrollTarget");
@@ -278,6 +312,7 @@ export default function Home() {
     }
   }, []);
 
+  // 4. Fetch real-time: MERGE dengan data lama, jangan menimpa
   useEffect(() => {
     let cancelled = false;
     let isLoading = false;
@@ -322,16 +357,7 @@ export default function Home() {
 
         if (cancelled) return;
 
-        setAllLocations(result.data);
-
-        try {
-          localStorage.setItem(
-            STORAGE_KEYS.locations,
-            JSON.stringify(result.data),
-          );
-        } catch (err) {
-          console.error("Failed to save real-time data:", err);
-        }
+        setAllLocations((prev) => mergeLocations(prev, result.data));
       } catch (err) {
         if (cancelled || err.name === "AbortError") return;
 
@@ -352,17 +378,9 @@ export default function Home() {
     };
   }, []);
 
-  const handleSelectPredictionLocation = (locationId) => {
-    const value = String(locationId);
+  const svrCategory = getNo2Category(predictionData?.svrValue);
 
-    setSelectedPredictionLocation(value);
-
-    try {
-      localStorage.setItem(STORAGE_KEYS.predictionLocation, value);
-    } catch (err) {
-      console.error("Failed to save selected prediction location:", err);
-    }
-  };
+  const xgboostCategory = getNo2Category(predictionData?.xgboostValue);
 
   return (
     <Flex
@@ -373,502 +391,514 @@ export default function Home() {
       align={"center"}
     >
       <Flex
-        direction={"column"}
-        w={"100%"}
-        align={"center"}
-        gap={{ base: "20px", lg: "20px" }}
-        py={"4vh"}
+        direction="column"
+        w="100%"
+        maxW="1600px"
+        align="center"
+        gap={{ base: "20px", lg: "24px" }}
+        px={{ base: "4%", md: "5%" }}
+        pt={{ base: "110px", md: "100px", xl: "105px" }}
+        pb="32px"
       >
-        <Flex
-          direction={{
-            base: "column",
-            sm: "column",
-            md: "column",
-            lg: "column",
-            xl: "row",
-          }}
-          w="90%"
-          mt={{
-            base: "110px",
-            sm: "110px",
-            md: "80px",
-            lg: "80px",
-            xl: "80px",
-          }}
-          gap="17px"
-          align="stretch"
-        >
+        <Flex w="100%" direction="column" gap="20px">
+          {/* bagian atas  */}
           <Flex
-            w={{
-              base: "100%",
-              sm: "100%",
-              md: "100%",
-              lg: "100%",
-              xl: "50%",
-            }}
+            w="100%"
+            p={{ base: "18px", md: "24px", xl: "20px" }}
+            borderRadius="2xl"
+            bg="bg.secondary"
+            boxShadow="0 8px 28px rgba(0, 0, 0, 0.09)"
             direction="column"
-            gap="17px"
+            gap="12px"
+            border="1px solid"
+            borderColor="border.subtle"
+            // justify="space-between"
           >
             <Flex
-              w={"100%"}
-              p={"20px"}
-              borderRadius={"2vh"}
-              bg={"bg.secondary"}
-              boxShadow={"0 4px 12px rgba(0, 0, 0, 0.2)"}
-              direction={"column"}
-              gap="17px"
               justify="space-between"
+              align={{ base: "flex-start", md: "center" }}
+              direction={{ base: "column", md: "row" }}
             >
-              <Flex direction="column">
-                <Flex justify="space-between" align="center">
+              <Flex direction="column" w="100%" h="100%" justify="center">
+                <Flex
+                  direction="row"
+                  w="100%"
+                  justify="space-between"
+                  align="center"
+                  gap="5px"
+                >
                   <Text fontSize="sm" color="text.thrid">
-                    Current Weather
+                    Current NO₂ Concentration
                   </Text>
 
-                  <Flex w="200px" direction="row" gap="1vh" align="center">
+                  <Flex
+                    w={{ base: "180px", md: "240px" }}
+                    flexShrink={0}
+                    direction="row"
+                    gap="10px"
+                    align="center"
+                    borderRadius="xl"
+                  >
                     <FaLocationDot />
-
-                    <ComboBoxDashboard
-                      value={selectedLocation}
-                      onValueChange={handleSelectLocation}
-                    />
+                    <Flex justify="end" minW="0" flex="1">
+                      <ComboBoxDashboard
+                        value={selectedLocation}
+                        onValueChange={handleSelectLocation}
+                      />
+                    </Flex>
                   </Flex>
                 </Flex>
 
-                <Text fontWeight="bold">
-                  {new Date().toLocaleTimeString("en-US", {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                    hour12: false,
-                    timeZone: "Asia/Jakarta",
-                  })}
+                <Text fontSize="md" color="text.primary" fontWeight="bold">
+                  {currentTime || "--:--"}
                 </Text>
               </Flex>
-
-              <Flex direction="row" gap="17px" align="center">
-                <FaCloudSun size="50px" />
-
-                <Text fontSize="xl">
-                  {currentLocationData?.nitrogen_dioxide != null
-                    ? `${Number(currentLocationData.nitrogen_dioxide).toFixed(
-                        2,
-                      )} μg/m³`
-                    : "-"}
-                </Text>
-              </Flex>
-
-              <Text fontSize="sm">
-                Latest actual data: {currentLocationData?.time_no2 ?? "-"}
-              </Text>
             </Flex>
 
             <Grid
               w="100%"
-              templateColumns={{
-                base: "repeat(2, 1fr)",
-                sm: "repeat(2, 1fr)",
-                md: "repeat(3, 1fr)",
-              }}
-              gap="17px"
+              templateColumns={{ base: "1fr", md: "1fr 1fr" }}
+              gap="14px"
             >
-              <MiniCard
-                title="Location"
-                hasil={locationNames[selectedLocation] ?? "-"}
-              />
+              {/* // prediksi */}
+              <Flex
+                direction="column"
+                justify="space-between"
+                h="100%"
+                minH="150px"
+                borderRadius="xl"
+                // gap="12px"
+              >
+                <Flex align="center" gap="20px" wrap="wrap" flex="1">
+                  <FaCloudSun size="50px" />
 
-              <MiniCard
-                title="Nitrogen Dioxide"
-                hasil={
-                  currentLocationData?.nitrogen_dioxide != null
-                    ? `${Number(currentLocationData.nitrogen_dioxide).toFixed(
-                        2,
-                      )} μg/m³`
-                    : "-"
-                }
-              />
+                  <Flex
+                    fontSize={{ base: "3xl", md: "xl" }}
+                    direction="row"
+                    gap="5px"
+                    align="center"
+                    wrap="wrap"
+                  >
+                    <Text color="text.primary" lineHeight="1">
+                      {currentLocationData?.nitrogen_dioxide != null
+                        ? Number(currentLocationData.nitrogen_dioxide).toFixed(
+                            2,
+                          )
+                        : "-"}
+                    </Text>
 
-              <MiniCard
-                title="Temperature"
-                hasil={
-                  currentLocationData?.temperature_2m != null
-                    ? `${Number(currentLocationData.temperature_2m).toFixed(
-                        2,
-                      )} °C`
-                    : "-"
-                }
-              />
+                    <Text color="text.primary">μg/m³</Text>
+                  </Flex>
+                </Flex>
 
-              <MiniCard
-                title="Wind Speed"
-                hasil={
-                  currentLocationData?.wind_speed_10m != null
-                    ? `${Number(currentLocationData.wind_speed_10m).toFixed(
-                        2,
-                      )} km/h`
-                    : "-"
-                }
-              />
-
-              <MiniCard
-                title="Rainfall"
-                hasil={
-                  currentLocationData?.rain != null
-                    ? `${Number(currentLocationData.rain).toFixed(2)} mm`
-                    : "-"
-                }
-              />
-
-              <MiniCard
-                title="Relative Humidity"
-                hasil={
-                  currentLocationData?.relative_humidity_2m != null
-                    ? `${Number(
-                        currentLocationData.relative_humidity_2m,
-                      ).toFixed(2)}%`
-                    : "-"
-                }
-              />
-            </Grid>
-
-            <Flex
-              w="100%"
-              gap="17px"
-              flex="1"
-              align="stretch"
-              direction={{
-                base: "column",
-                sm: "column",
-                md: "row",
-                lg: "row",
-                xl: "row",
-              }}
-            >
-              <Flex w="100%" direction="row" gap="17px">
-                <MiniCardLocation
-                  location="Jakarta Timur"
-                  hasil={getLocationNO2(1)}
-                  lag2={getLocationLAG2(1)}
-                  onSelect={() => handleSelectLocation("1")}
-                />
-
-                <MiniCardLocation
-                  location="Bogor"
-                  hasil={getLocationNO2(4)}
-                  lag2={getLocationLAG2(4)}
-                  onSelect={() => handleSelectLocation("4")}
-                />
-              </Flex>
-
-              <Flex w="100%" direction="row" gap="17px">
-                <MiniCardLocation
-                  location="Tangerang"
-                  hasil={getLocationNO2(6)}
-                  lag2={getLocationLAG2(6)}
-                  onSelect={() => handleSelectLocation("6")}
-                />
-
-                <MiniCardLocation
-                  location="Bekasi"
-                  hasil={getLocationNO2(3)}
-                  lag2={getLocationLAG2(3)}
-                  onSelect={() => handleSelectLocation("3")}
-                />
-              </Flex>
-            </Flex>
-          </Flex>
-
-          <Flex
-            w={{
-              base: "100%",
-              sm: "100%",
-              md: "100%",
-              lg: "100%",
-              xl: "50%",
-            }}
-            direction="column"
-            gap="17px"
-            minW="0"
-          >
-            <Flex
-              w="100%"
-              px={"20px"}
-              py={"18px"}
-              boxShadow={"0 4px 12px rgba(0, 0, 0, 0.2)"}
-              borderRadius="2vh"
-              bg="bg.secondary"
-              gap="17px"
-              direction="column"
-            >
-              <Flex pb="0.5vh" borderBottom="1px solid #dfdddd">
-                <Text fontWeight="bold" color="text.fouth">
-                  Nitrogen Dioxide Prediction
+                <Text fontSize="sm" color="text.primary">
+                  Latest actual data:{" "}
+                  <Text as="span" fontWeight="bold">
+                    {formattedDateTime}
+                  </Text>
                 </Text>
               </Flex>
 
               <Flex
-                direction={{
-                  base: "column",
-                  md: "row",
-                }}
-                gap="17px"
+                direction="column"
                 justify="space-between"
+                px={{ base: "18px", md: "22px" }}
+                borderLeft="1px solid"
+                borderColor="border.primary"
+                gap="10px"
               >
-                <Flex
-                  direction="column"
-                  w={{
-                    base: "100%",
-                    md: "45%",
-                  }}
-                >
-                  <Text w="20vh" fontSize="sm" fontWeight="bold">
-                    Location
-                  </Text>
-
-                  <ComboBoxDashboard
-                    key={`prediction-${selectedPredictionLocation}`}
-                    w="100%"
-                    value={selectedPredictionLocation}
-                    onValueChange={handleSelectPredictionLocation}
-                  />
-                </Flex>
-
-                <Flex w="100%" gap="17px">
-                  <InputPrediction
-                    title="Temperature"
-                    placeholder="Temperature..."
-                    value={
-                      predictionData?.temperature_2m != null
-                        ? Number(predictionData.temperature_2m).toFixed(2)
-                        : "-"
-                    }
-                    satuan="°C"
-                  />
-
-                  <InputPrediction
-                    title="Wind Speed"
-                    placeholder="Wind Speed..."
-                    value={
-                      predictionData?.wind_speed_10m != null
-                        ? Number(predictionData.wind_speed_10m).toFixed(2)
-                        : "-"
-                    }
-                    satuan="km/h"
-                  />
-                </Flex>
-              </Flex>
-
-              <Flex direction="row" gap="17px" justify="space-between">
-                <InputPrediction
-                  title="Rainfall"
-                  placeholder="Rainfall..."
-                  value={
-                    predictionData?.rain != null
-                      ? Number(predictionData.rain).toFixed(2)
-                      : "-"
-                  }
-                  satuan="mm"
-                />
-
-                <InputPrediction
-                  title="Relative Humidity"
-                  placeholder="Relative Humidity..."
-                  value={
-                    predictionData?.relative_humidity_2m != null
-                      ? Number(predictionData.relative_humidity_2m).toFixed(2)
-                      : "-"
-                  }
-                  satuan="%"
-                />
-              </Flex>
-
-              <Flex
-                justify="center"
-                align="center"
-                direction="column"
-                gap="5px"
-              >
-                <Button
-                  w="120px"
-                  h="32px"
-                  borderRadius="4vh"
-                  bg="button.primary"
-                  onClick={handleSendPrediction}
-                  loading={loading}
-                  _hover={{
-                    bg: "hover.primary",
-                  }}
-                >
-                  Send
-                </Button>
-
-                {error && (
-                  <Text color="red.500" fontSize="sm" textAlign="center">
-                    {error}
-                  </Text>
-                )}
-              </Flex>
-            </Flex>
-
-            <Flex
-              w="100%"
-              flex="1"
-              direction={{
-                base: "column",
-                sm: "column",
-                md: "row",
-              }}
-              gap="17px"
-              align="stretch"
-              minW="0"
-            >
-              <Flex flex="1" minW="0" minH="40vh">
-                <PredictionChart data={predictionData} />
-              </Flex>
-
-              <Flex
-                w={{
-                  base: "100%",
-                  md: "42%",
-                }}
-                minW="0"
-                direction="column"
-                p="20px"
-                boxShadow={"0 4px 12px rgba(0, 0, 0, 0.2)"}
-                borderRadius="2vh"
-                bg="bg.secondary"
-                gap="17px"
-              >
-                <Flex pb="0.5vh" borderBottom="1px solid #dfdddd">
-                  <Text fontWeight="bold" color="text.fouth">
-                    Prediction Results
-                  </Text>
-                </Flex>
-
-                <Flex w="100%" direction="column" gap="5px">
-                  <Flex
-                    direction={{
-                      base: "column",
-                      sm: "column",
-                      md: "row",
-                    }}
-                    gap="5px"
-                    align={{
-                      base: "flex-start",
-                      md: "center",
-                    }}
+                <Flex justify="space-between" align="center" gap="5px">
+                  <Text
+                    fontSize="sm"
+                    color="text.primary"
+                    fontWeight="semibold"
                   >
-                    <Text fontSize="sm" color="text.thrid">
-                      NO₂ Prediction Time:
-                    </Text>
+                    Predicted NO₂ concentration
+                  </Text>
 
-                    <Text fontSize="lg" color="text.thrid" fontWeight="bold">
-                      {predictionData ? predictionData.time : "-"}
-                    </Text>
-                  </Flex>
+                  <Text fontSize="sm" color="text.thrid" fontWeight="semibold">
+                    {predictionData?.time
+                      ? `At ${predictionData.time}`
+                      : "Prediction time: -"}
+                  </Text>
+                </Flex>
 
-                  <Flex w="100%" direction="column" gap="17px" mt="1.5vh">
+                <Flex direction="column" gap="10px">
+                  {/* SVR */}
+                  <Flex
+                    w="100%"
+                    align="center"
+                    bg="card.primary"
+                    py="2vh"
+                    px="1.25vh"
+                    borderRadius="2vh"
+                  >
                     <Flex
                       w="100%"
-                      flex="1"
+                      justify="space-between"
                       align="center"
-                      bg="card.primary"
-                      py="2vh"
-                      px="1.25vh"
-                      borderRadius="2vh"
+                      gap="5px"
                     >
-                      <Flex
-                        w="100%"
-                        justify="space-between"
-                        align="center"
-                        gap="5px"
-                        direction="row"
-                      >
-                        <Text
-                          fontSize="md"
-                          textAlign="center"
-                          fontWeight="bold"
-                        >
+                      <Flex align="center" gap="10px">
+                        <Text fontSize="md" fontWeight="bold">
                           SVR
                         </Text>
 
                         <Flex
-                          direction="row"
-                          gap="5px"
-                          align="center"
-                          justify="center"
+                          // border="1px solid"
+                          // borderColor="border.primary"
+                          px="10px"
+                          py="2px"
+                          borderRadius="xl"
+                          bg={svrCategory.bg}
                         >
                           <Text
-                            fontSize={{
-                              base: "xl",
-                              md: "2xl",
-                            }}
+                            fontSize="xs"
                             fontWeight="bold"
-                            color="text.fouth"
+                            color={svrCategory.color}
                           >
-                            {predictionData
-                              ? Number(predictionData.svrValue).toFixed(2)
-                              : "-"}
+                            {svrCategory.label}
                           </Text>
-
-                          {predictionData && (
-                            <Text fontSize="sm" color="text.thrid">
-                              μg/m³
-                            </Text>
-                          )}
                         </Flex>
                       </Flex>
-                    </Flex>
 
+                      <Flex align="center" gap="5px">
+                        <Text
+                          fontSize={{ base: "xl", md: "2xl" }}
+                          fontWeight="bold"
+                          color="text.fouth"
+                        >
+                          {predictionData
+                            ? Number(predictionData.svrValue).toFixed(2)
+                            : "-"}
+                        </Text>
+
+                        {predictionData && (
+                          <Text fontSize="sm" color="text.thrid">
+                            μg/m³
+                          </Text>
+                        )}
+                      </Flex>
+                    </Flex>
+                  </Flex>
+
+                  {/* XGBoost */}
+                  <Flex
+                    w="100%"
+                    align="center"
+                    bg="card.primary"
+                    py="2vh"
+                    px="1.25vh"
+                    borderRadius="2vh"
+                  >
                     <Flex
                       w="100%"
-                      flex="1"
+                      justify="space-between"
                       align="center"
-                      bg="card.primary"
-                      py="2vh"
-                      px="1.25vh"
-                      borderRadius="2vh"
+                      gap="5px"
                     >
-                      <Flex
-                        w="100%"
-                        justify="space-between"
-                        align="center"
-                        gap="5px"
-                        direction="row"
-                      >
-                        <Text
-                          fontSize="md"
-                          textAlign="center"
-                          fontWeight="bold"
-                        >
+                      <Flex align="center" gap="10px">
+                        <Text fontSize="md" fontWeight="bold">
                           XGBoost
                         </Text>
 
                         <Flex
-                          direction="row"
-                          gap="5px"
-                          align="center"
-                          justify="center"
+                          // border="1px solid"
+                          // borderColor="border.primary"
+                          px="10px"
+                          py="2px"
+                          borderRadius="xl"
+                          bg={xgboostCategory.bg}
                         >
                           <Text
-                            fontSize={{
-                              base: "xl",
-                              md: "2xl",
-                            }}
+                            fontSize="xs"
                             fontWeight="bold"
-                            color="text.fouth"
+                            color={xgboostCategory.color}
                           >
-                            {predictionData
-                              ? Number(predictionData.xgboostValue).toFixed(2)
-                              : "-"}
+                            {xgboostCategory.label}
                           </Text>
-
-                          {predictionData && (
-                            <Text fontSize="sm" color="text.thrid">
-                              μg/m³
-                            </Text>
-                          )}
                         </Flex>
                       </Flex>
+
+                      <Flex align="center" gap="5px">
+                        <Text
+                          fontSize={{ base: "xl", md: "2xl" }}
+                          fontWeight="bold"
+                          color="text.fouth"
+                        >
+                          {predictionData
+                            ? Number(predictionData.xgboostValue).toFixed(2)
+                            : "-"}
+                        </Text>
+
+                        {predictionData && (
+                          <Text fontSize="sm" color="text.thrid">
+                            μg/m³
+                          </Text>
+                        )}
+                      </Flex>
+                    </Flex>
+                  </Flex>
+                </Flex>
+              </Flex>
+            </Grid>
+            {error && (
+              <Text color="red.500" fontSize="sm">
+                {error}
+              </Text>
+            )}
+          </Flex>
+
+          <Flex w={"100%"} direction={"row"} gap={"15px"}>
+            <Flex w={"50%"} direction={"column"} gap={"15px"}>
+              <Grid
+                w="100%"
+                templateColumns={{
+                  base: "repeat(2, minmax(0, 1fr))",
+                  md: "repeat(3, minmax(0, 1fr))",
+                }}
+                gap={{ base: "10px", md: "16px" }}
+              >
+                <MiniCard
+                  title="Location"
+                  hasil={locationNames[selectedLocation] ?? "-"}
+                />
+
+                <MiniCard
+                  title="Nitrogen Dioxide"
+                  hasil={
+                    currentLocationData?.nitrogen_dioxide != null
+                      ? `${Number(currentLocationData.nitrogen_dioxide).toFixed(2)} μg/m³`
+                      : "-"
+                  }
+                />
+
+                <MiniCard
+                  title="Temperature"
+                  hasil={
+                    currentLocationData?.temperature_2m != null
+                      ? `${Number(currentLocationData.temperature_2m).toFixed(2)} °C`
+                      : "-"
+                  }
+                />
+
+                <MiniCard
+                  title="Wind Speed"
+                  hasil={
+                    currentLocationData?.wind_speed_10m != null
+                      ? `${Number(currentLocationData.wind_speed_10m).toFixed(2)} km/h`
+                      : "-"
+                  }
+                />
+
+                <MiniCard
+                  title="Rainfall"
+                  hasil={
+                    currentLocationData?.rain != null
+                      ? `${Number(currentLocationData.rain).toFixed(2)} mm`
+                      : "-"
+                  }
+                />
+
+                <MiniCard
+                  title="Relative Humidity"
+                  hasil={
+                    currentLocationData?.relative_humidity_2m != null
+                      ? `${Number(currentLocationData.relative_humidity_2m).toFixed(2)}%`
+                      : "-"
+                  }
+                />
+              </Grid>
+
+              <Flex
+                w="100%"
+                gap="14px"
+                align="stretch"
+                direction={{ base: "column", lg: "row" }}
+              >
+                <Grid
+                  w="100%"
+                  templateColumns="repeat(2, minmax(0, 1fr))"
+                  gap="14px"
+                >
+                  <MiniCardLocation
+                    location="Jakarta Timur"
+                    hasil={getLocationNO2(1)}
+                    lag2={getLocationLAG2(1)}
+                    onSelect={() => handleSelectLocation("1")}
+                  />
+
+                  <MiniCardLocation
+                    location="Bogor"
+                    hasil={getLocationNO2(4)}
+                    lag2={getLocationLAG2(4)}
+                    onSelect={() => handleSelectLocation("4")}
+                  />
+                </Grid>
+
+                <Grid
+                  w="100%"
+                  templateColumns="repeat(2, minmax(0, 1fr))"
+                  gap="14px"
+                >
+                  <MiniCardLocation
+                    location="Tangerang"
+                    hasil={getLocationNO2(6)}
+                    lag2={getLocationLAG2(6)}
+                    onSelect={() => handleSelectLocation("6")}
+                  />
+
+                  <MiniCardLocation
+                    location="Bekasi"
+                    hasil={getLocationNO2(3)}
+                    lag2={getLocationLAG2(3)}
+                    onSelect={() => handleSelectLocation("3")}
+                  />
+                </Grid>
+              </Flex>
+            </Flex>
+
+            <Flex
+              w={{
+                base: "100%",
+                sm: "100%",
+                md: "100%",
+                lg: "100%",
+                xl: "50%",
+              }}
+              direction="column"
+              gap="17px"
+              minW="0"
+            >
+              <Flex
+                w="100%"
+                flex="1"
+                direction={{
+                  base: "column",
+                  sm: "column",
+                  md: "row",
+                }}
+                gap="17px"
+                align="stretch"
+                minW="0"
+              >
+                <Flex flex="1" minW="0" minH="40vh">
+                  <PredictionChart data={predictionData} />
+                </Flex>
+
+                <Flex
+                  w={{
+                    base: "100%",
+                    md: "42%",
+                  }}
+                  minW="0"
+                  direction="column"
+                  p="20px"
+                  boxShadow={"0 4px 12px rgba(0, 0, 0, 0.2)"}
+                  borderRadius="2vh"
+                  bg="bg.secondary"
+                  gap="17px"
+                >
+                  <Flex pb="0.5vh" borderBottom="1px solid #dfdddd">
+                    <Text fontWeight="bold" color="text.fouth">
+                      NO₂ Category
+                    </Text>
+                  </Flex>
+
+                  <Flex
+                    w="100%"
+                    direction="column"
+                    gap="5px"
+                    justify="space-between"
+                  >
+                    {/* Baik */}
+                    <Flex
+                      bg="bg.primary"
+                      p="7px 10px"
+                      borderRadius="sm"
+                      direction="row"
+                      gap="5px"
+                      align="center"
+                      justify="space-between"
+                    >
+                      <Text fontSize="sm" color="text.thrid">
+                        Baik
+                      </Text>
+                      <Text fontSize="sm" color="text.thrid" fontWeight="bold">
+                        0 – 50
+                      </Text>
+                    </Flex>
+
+                    {/* Sedang */}
+                    <Flex
+                      bg="bg.primary"
+                      p="7px 10px"
+                      borderRadius="sm"
+                      direction="row"
+                      gap="5px"
+                      align="center"
+                      justify="space-between"
+                    >
+                      <Text fontSize="sm" color="text.thrid">
+                        Sedang
+                      </Text>
+                      <Text fontSize="sm" color="text.thrid" fontWeight="bold">
+                        51 – 100
+                      </Text>
+                    </Flex>
+
+                    {/* Tidak Sehat */}
+                    <Flex
+                      bg="bg.primary"
+                      p="7px 10px"
+                      borderRadius="sm"
+                      direction="row"
+                      gap="5px"
+                      align="center"
+                      justify="space-between"
+                    >
+                      <Text fontSize="sm" color="text.thrid">
+                        Tidak Sehat
+                      </Text>
+                      <Text fontSize="sm" color="text.thrid" fontWeight="bold">
+                        101 – 199
+                      </Text>
+                    </Flex>
+
+                    {/* Sangat Tidak Sehat */}
+                    <Flex
+                      bg="bg.primary"
+                      p="7px 10px"
+                      borderRadius="sm"
+                      direction="row"
+                      gap="5px"
+                      align="center"
+                      justify="space-between"
+                    >
+                      <Text fontSize="sm" color="text.thrid">
+                        Sangat Tidak Sehat
+                      </Text>
+                      <Text fontSize="sm" color="text.thrid" fontWeight="bold">
+                        200 – 299
+                      </Text>
+                    </Flex>
+
+                    {/* Berbahaya */}
+                    <Flex
+                      bg="bg.primary"
+                      p="7px 10px"
+                      borderRadius="sm"
+                      direction="row"
+                      gap="5px"
+                      align="center"
+                      justify="space-between"
+                    >
+                      <Text fontSize="sm" color="text.thrid">
+                        Berbahaya
+                      </Text>
+                      <Text fontSize="sm" color="text.thrid" fontWeight="bold">
+                        300 – 500
+                      </Text>
                     </Flex>
                   </Flex>
                 </Flex>
@@ -971,20 +1001,6 @@ export default function Home() {
           © 2026 Shirley 535230024. All rights reserved.
         </Text>
       </Flex>
-
-      {showPredictionPopup && (
-        <PopupMini
-          title="Prediction"
-          message="Please log in first to make a prediction."
-          button1="Cancel"
-          button2="Login"
-          onClick1={() => setShowPredictionPopup(false)}
-          onClick2={() => {
-            setShowPredictionPopup(false);
-            router.push("/Login");
-          }}
-        />
-      )}
     </Flex>
   );
 }

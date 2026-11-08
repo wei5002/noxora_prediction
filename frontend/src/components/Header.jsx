@@ -247,7 +247,8 @@ export default function Header() {
               }}
               fontSize="sm"
               fontWeight="bold"
-              bg="button.six"
+              // bg="button.six"
+              bg="button.primary"
               borderRadius="10vh"
               onClick={handleInstallApp}
             >
@@ -255,7 +256,7 @@ export default function Header() {
             </Button>
           )}
 
-          {/* LOGIN / PROFILE */}
+          {/* LOGIN / PROFILE
           {isLoggedIn ? (
             <>
               <Button
@@ -344,7 +345,7 @@ export default function Header() {
                 Sign up
               </Button>
             </>
-          )}
+          )} */}
         </Flex>
       </Flex>
 
