@@ -160,8 +160,10 @@ export default function Home() {
     [allLocations, selectedLocation],
   );
 
-  const formattedDateTime = currentLocationData?.target_time
-    ? new Date(currentLocationData.target_time).toLocaleString("en-US", {
+  const formattedDateTime = currentLocationData?.time_no2
+    ? new Date(
+        currentLocationData.time_no2.replace(" ", "T") + "+07:00",
+      ).toLocaleString("en-US", {
         month: "long",
         day: "numeric",
         year: "numeric",
@@ -171,7 +173,9 @@ export default function Home() {
         timeZone: "Asia/Jakarta",
       })
     : "-";
-    
+
+  console.log("Current location data:", currentLocationData);
+
   // 3. Prediksi dihitung langsung dari data lokasi terpilih (bukan state)
   const { predictionData, error } = useMemo(() => {
     if (!currentLocationData) {
