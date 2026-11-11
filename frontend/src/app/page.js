@@ -432,7 +432,7 @@ export default function Home() {
                   gap="5px"
                 >
                   <Text fontSize="sm" color="text.thrid">
-                    Current NO₂ 
+                    Current NO₂
                   </Text>
 
                   <Flex
@@ -478,7 +478,7 @@ export default function Home() {
               >
                 {/* Icon dan konsentrasi NO2 */}
                 <Flex
-                mt={{base:"15px",md:"40px"}}
+                  mt={{ base: "15px", md: "40px" }}
                   align="center"
                   gap={{ base: "12px", md: "20px" }}
                   direction="row"
@@ -553,7 +553,7 @@ export default function Home() {
                     color="text.primary"
                     fontWeight="semibold"
                   >
-                    Predicted NO₂ 
+                    Predicted NO₂
                   </Text>
 
                   <Text fontSize="sm" color="text.thrid" fontWeight="semibold">
@@ -1034,12 +1034,12 @@ export default function Home() {
         <Text fontSize="xl" fontWeight="bold" color="text.fouth">
           Noxora
         </Text>
-
-        <Text fontSize="sm" color="text.thrid" textAlign="center">
-          Nitrogen Dioxide (NO₂) Concentration Prediction
-          <br />
-          Using XGBoost and Support Vector Regression
-        </Text>
+        <Flex maxW={"350px"}>
+          <Text fontSize="sm" color="text.thrid" textAlign="center">
+            Nitrogen Dioxide (NO₂) Concentration Prediction Using XGBoost and
+            Support Vector Regression
+          </Text>
+        </Flex>
 
         <Text fontSize="xs" color="text.thrid" mt="1vh">
           © 2026 Shirley 535230024. All rights reserved.
