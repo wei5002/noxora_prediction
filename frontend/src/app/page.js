@@ -65,7 +65,7 @@ const getNo2Category = (value) => {
 
   if (concentration <= 80) {
     return {
-      label: "Baik",
+      label: "Good",
       description: "Good air quality",
       color: "#1d5e35",
       bg: "#b6fbce",
@@ -74,7 +74,7 @@ const getNo2Category = (value) => {
 
   if (concentration <= 200) {
     return {
-      label: "Sedang",
+      label: "Moderate",
       description: "Moderate air quality",
       color: "#1d4ed8",
       bg: "#bbd5f7",
@@ -83,7 +83,7 @@ const getNo2Category = (value) => {
 
   if (concentration <= 1130) {
     return {
-      label: "Tidak Sehat",
+      label: "Unhealthy",
       description: "Unhealthy air quality",
       color: "#a16207",
       bg: "#fef9c3",
@@ -92,7 +92,7 @@ const getNo2Category = (value) => {
 
   if (concentration <= 2260) {
     return {
-      label: "Sangat Tidak Sehat",
+      label: "Very Unhealthy",
       description: "Very unhealthy air quality",
       color: "#b91c1c",
       bg: "#fee2e2",
@@ -100,7 +100,7 @@ const getNo2Category = (value) => {
   }
 
   return {
-    label: "Berbahaya",
+    label: "Hazardous",
     description: "Hazardous air quality",
     color: "#ffffff",
     bg: "#6e2121",
@@ -400,8 +400,8 @@ export default function Home() {
         maxW="1600px"
         align="center"
         gap={{ base: "20px", lg: "24px" }}
-        px={{ base: "4%", md: "5%" }}
-        pt={{ base: "110px", md: "100px", xl: "105px" }}
+        px={{ base: "5%", md: "5%" }}
+        pt={{ base: "140px", md: "110px", xl: "110px" }}
         pb="32px"
       >
         <Flex w="100%" direction="column" gap="20px">
@@ -432,7 +432,7 @@ export default function Home() {
                   gap="5px"
                 >
                   <Text fontSize="sm" color="text.thrid">
-                    Current NO₂ Concentration
+                    Current NO₂ 
                   </Text>
 
                   <Flex
@@ -459,29 +459,40 @@ export default function Home() {
               </Flex>
             </Flex>
 
-            <Grid
+            <Flex
               w="100%"
-              templateColumns={{ base: "1fr", md: "1fr 1fr" }}
+              direction={{ base: "column", md: "row" }}
               gap="14px"
+              justify={"space-between"}
             >
               {/* // prediksi */}
               <Flex
+                w="100%"
+                flex="1"
+                minW="0"
                 direction="column"
                 justify="space-between"
-                h="100%"
-                minH="150px"
+                minH={{ base: "130px", md: "150px" }}
                 borderRadius="xl"
-                // gap="12px"
+                gap="20px"
               >
-                <Flex align="center" gap="20px" wrap="wrap" flex="1">
+                {/* Icon dan konsentrasi NO2 */}
+                <Flex
+                mt={{base:"15px",md:"40px"}}
+                  align="center"
+                  gap={{ base: "12px", md: "20px" }}
+                  direction="row"
+                  wrap="wrap"
+                >
                   <FaCloudSun size="50px" />
 
                   <Flex
-                    fontSize={{ base: "3xl", md: "xl" }}
+                    fontSize={{ base: "xl", sm: "xl", lg: "2xl" }}
                     direction="row"
                     gap="5px"
                     align="center"
                     wrap="wrap"
+                    minW="0"
                   >
                     <Text color="text.primary" lineHeight="1">
                       {currentLocationData?.nitrogen_dioxide != null
@@ -495,29 +506,54 @@ export default function Home() {
                   </Flex>
                 </Flex>
 
-                <Text fontSize="sm" color="text.primary">
-                  Latest actual data:{" "}
-                  <Text as="span" fontWeight="bold">
+                {/* Waktu data aktual */}
+                <Flex
+                  direction={{ base: "column", sm: "row" }}
+                  gap={{ base: "2px", sm: "5px" }}
+                  align={{ base: "flex-start", sm: "center" }}
+                  wrap="wrap"
+                  minW="0"
+                >
+                  <Text fontSize="sm" color="text.primary">
+                    Latest actual data:
+                  </Text>
+
+                  <Text
+                    fontWeight="bold"
+                    fontSize="sm"
+                    color="text.primary"
+                    lineHeight="1.5"
+                    overflowWrap="anywhere"
+                  >
                     {formattedDateTime}
                   </Text>
-                </Text>
+                </Flex>
               </Flex>
 
               <Flex
+                w={{ base: "100%", md: "50%" }}
                 direction="column"
                 justify="space-between"
-                px={{ base: "18px", md: "22px" }}
-                borderLeft="1px solid"
+                px={{ md: "22px" }}
+                pt={{ base: "15px", md: "0" }}
+                borderLeft={{ base: "none", md: "1px solid #dedbdb" }}
+                borderTop={{ base: "1px solid #dedbdb", md: "none" }}
                 borderColor="border.primary"
                 gap="10px"
               >
-                <Flex justify="space-between" align="center" gap="5px">
+                <Flex
+                  flex="1"
+                  justify="space-between"
+                  align={{ lg: "center" }}
+                  gap="5px"
+                  direction="row"
+                >
                   <Text
                     fontSize="sm"
                     color="text.primary"
                     fontWeight="semibold"
                   >
-                    Predicted NO₂ concentration
+                    Predicted NO₂ 
                   </Text>
 
                   <Text fontSize="sm" color="text.thrid" fontWeight="semibold">
@@ -645,7 +681,7 @@ export default function Home() {
                   </Flex>
                 </Flex>
               </Flex>
-            </Grid>
+            </Flex>
             {error && (
               <Text color="red.500" fontSize="sm">
                 {error}
@@ -653,8 +689,12 @@ export default function Home() {
             )}
           </Flex>
 
-          <Flex w={"100%"} direction={"row"} gap={"15px"}>
-            <Flex w={"50%"} direction={"column"} gap={"15px"}>
+          <Flex
+            w={"100%"}
+            direction={{ base: "column", xl: "row" }}
+            gap={"15px"}
+          >
+            <Flex w={{ xl: "50%" }} direction={"column"} gap={"15px"}>
               <Grid
                 w="100%"
                 templateColumns={{
@@ -826,7 +866,7 @@ export default function Home() {
                       justify="space-between"
                     >
                       <Text fontSize="sm" color="text.thrid">
-                        Baik
+                        Good
                       </Text>
                       <Text fontSize="sm" color="text.thrid" fontWeight="bold">
                         0 – 50
@@ -844,7 +884,7 @@ export default function Home() {
                       justify="space-between"
                     >
                       <Text fontSize="sm" color="text.thrid">
-                        Sedang
+                        Moderate
                       </Text>
                       <Text fontSize="sm" color="text.thrid" fontWeight="bold">
                         51 – 100
@@ -862,7 +902,7 @@ export default function Home() {
                       justify="space-between"
                     >
                       <Text fontSize="sm" color="text.thrid">
-                        Tidak Sehat
+                        Unhealthy
                       </Text>
                       <Text fontSize="sm" color="text.thrid" fontWeight="bold">
                         101 – 199
@@ -880,7 +920,7 @@ export default function Home() {
                       justify="space-between"
                     >
                       <Text fontSize="sm" color="text.thrid">
-                        Sangat Tidak Sehat
+                        Very Unhealthy
                       </Text>
                       <Text fontSize="sm" color="text.thrid" fontWeight="bold">
                         200 – 299
@@ -898,7 +938,7 @@ export default function Home() {
                       justify="space-between"
                     >
                       <Text fontSize="sm" color="text.thrid">
-                        Berbahaya
+                        Hazardous
                       </Text>
                       <Text fontSize="sm" color="text.thrid" fontWeight="bold">
                         300 – 500
@@ -913,7 +953,7 @@ export default function Home() {
 
         <Flex
           w={{
-            base: "90%",
+            base: "100%",
             lg: "60%",
           }}
           py="20px"
