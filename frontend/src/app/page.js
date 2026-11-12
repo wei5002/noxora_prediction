@@ -833,7 +833,7 @@ export default function Home() {
                 <Flex
                   w={{
                     base: "100%",
-                    md: "42%",
+                    md: "45%",
                   }}
                   minW="0"
                   direction="column"
@@ -845,7 +845,7 @@ export default function Home() {
                 >
                   <Flex pb="0.5vh" borderBottom="1px solid #dfdddd">
                     <Text fontWeight="bold" color="text.fouth">
-                      NO₂ Category
+                      NO₂ Category (μg/m³)
                     </Text>
                   </Flex>
 
@@ -869,7 +869,7 @@ export default function Home() {
                         Good
                       </Text>
                       <Text fontSize="sm" color="text.thrid" fontWeight="bold">
-                        0 – 50
+                        0 – 80 
                       </Text>
                     </Flex>
 
@@ -887,7 +887,7 @@ export default function Home() {
                         Moderate
                       </Text>
                       <Text fontSize="sm" color="text.thrid" fontWeight="bold">
-                        51 – 100
+                         80 – 200 
                       </Text>
                     </Flex>
 
@@ -905,7 +905,7 @@ export default function Home() {
                         Unhealthy
                       </Text>
                       <Text fontSize="sm" color="text.thrid" fontWeight="bold">
-                        101 – 199
+                        200 – 1.130 
                       </Text>
                     </Flex>
 
@@ -923,7 +923,7 @@ export default function Home() {
                         Very Unhealthy
                       </Text>
                       <Text fontSize="sm" color="text.thrid" fontWeight="bold">
-                        200 – 299
+                        1.130 – 2.260 
                       </Text>
                     </Flex>
 
@@ -941,7 +941,7 @@ export default function Home() {
                         Hazardous
                       </Text>
                       <Text fontSize="sm" color="text.thrid" fontWeight="bold">
-                        300 – 500
+                       ≥ 2.260 
                       </Text>
                     </Flex>
                   </Flex>
